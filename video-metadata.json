@@ -1,0 +1,20 @@
+{
+  "video1": {
+    "title": "Amazing Video Title 1",
+    "description": "This is an amazing video description with relevant keywords and information about the content.",
+    "tags": ["amazing", "video", "content", "entertainment"],
+    "visibility": "private"
+  },
+  "video2": {
+    "title": "Incredible Video Title 2", 
+    "description": "Another incredible video with engaging content and detailed description for better SEO.",
+    "tags": ["incredible", "video", "content", "viral"],
+    "visibility": "private"
+  },
+  "video3": {
+    "title": "Fantastic Video Title 3",
+    "description": "A fantastic video that will blow your mind with amazing content and stunning visuals.",
+    "tags": ["fantastic", "video", "mind-blowing", "stunning"],
+    "visibility": "private"
+  }
+} 
