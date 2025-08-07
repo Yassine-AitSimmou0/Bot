@@ -19,7 +19,9 @@ class ProfileLogger {
         gmailLogin: false,
         youtubeNavigation: false,
         channelCreated: false,
-        videosUploaded: []
+        videosUploaded: false,
+        cookiesSaved: false,
+        cookiesLoaded: false
       },
       errors: [],
       uploads: [],
@@ -46,7 +48,12 @@ class ProfileLogger {
       details: details
     };
     this.progress.uploads.push(upload);
-    this.progress.steps.videosUploaded.push(upload);
+    
+    // Update videosUploaded step if this is a successful upload
+    if (success) {
+      this.progress.steps.videosUploaded = true;
+    }
+    
     this.saveProgress();
     logger.info(`[${this.email}] Video upload ${path.basename(videoPath)}: ${success ? '✅' : '❌'}`);
   }

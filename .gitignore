@@ -10,6 +10,8 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+env.example
+test-gologin.js #test file for gologin
 
 # Logs
 logs/

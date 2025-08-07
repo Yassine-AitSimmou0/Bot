@@ -8,7 +8,9 @@
     "web": "node web-interface.js",
     "dev": "nodemon index.js",
     "test": "node test.js",
-    "test-single": "node test-single-account.js"
+    "test-single": "node test-single-account.js",
+    "test-api": "node test-api.js",
+    "build-css": "tailwindcss -i ./src/input.css -o ./public/styles.css --watch"
   },
   "keywords": [
     "youtube",
@@ -23,16 +25,23 @@
     "axios": "^1.6.2",
     "delay": "^5.0.0",
     "dotenv": "^16.3.1",
-    "express": "^4.21.2",
+    "express": "^4.18.2",
     "fs-extra": "^11.1.1",
     "ghost-cursor": "^1.1.8",
     "gologin": "^2.1.30",
     "multer": "^1.4.5-lts.1",
     "puppeteer": "^24.15.0",
     "uuid": "^9.0.1",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "socket.io": "^4.7.4",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32"
   }
 }

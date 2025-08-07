@@ -14,6 +14,7 @@ class YouTubeBot {
     this.page = null;
     this.accounts = [];
     this.currentAccountIndex = 0;
+    this.stopRequested = false;
   }
 
   // Initialize the bot
@@ -93,6 +94,12 @@ class YouTubeBot {
     let lastError = null;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      // Check if stop was requested
+      if (this.stopRequested) {
+        logger.info(`[${account.email}] Stop requested, halting account processing`);
+        return false;
+      }
+      
       const profileLogger = new ProfileLogger(account.email, `attempt_${attempt}`);
       let profileId = null;
       let success = false;
@@ -250,6 +257,12 @@ class YouTubeBot {
       
       // Process each account
       for (let i = 0; i < this.accounts.length; i++) {
+        // Check if stop was requested
+        if (this.stopRequested) {
+          logger.info('Stop requested, halting bot execution');
+          break;
+        }
+        
         const account = this.accounts[i];
         logger.info(`Processing account ${i + 1}/${this.accounts.length}: ${account.email}`);
         
@@ -261,12 +274,12 @@ class YouTubeBot {
             failureCount++;
           }
           
-                     // Delay between accounts (5-10 minutes as per advice)
-           if (i < this.accounts.length - 1) {
-             const delayTime = Math.floor(Math.random() * 300000) + 300000; // 5-10 minutes
-             logger.info(`Waiting ${Math.floor(delayTime / 60000)} minutes before next account...`);
-             await new Promise(resolve => setTimeout(resolve, delayTime));
-           }
+          // Delay between accounts (5-10 minutes as per advice)
+          if (i < this.accounts.length - 1 && !this.stopRequested) {
+            const delayTime = Math.floor(Math.random() * 300000) + 300000; // 5-10 minutes
+            logger.info(`Waiting ${Math.floor(delayTime / 60000)} minutes before next account...`);
+            await new Promise(resolve => setTimeout(resolve, delayTime));
+          }
           
         } catch (error) {
           logger.error(`Failed to process account ${account.email}:`, error.message);
@@ -291,6 +304,7 @@ class YouTubeBot {
   async stop() {
     try {
       logger.info('Stopping YouTube Automation Bot...');
+      this.stopRequested = true;
       
       if (this.browser) {
         await this.browser.close();

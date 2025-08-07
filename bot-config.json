@@ -1,0 +1,7 @@
+{
+  "maxVideosPerChannel": 1,
+  "uploadDelay": 10,
+  "retryAttempts": 3,
+  "saveCookies": true,
+  "humanBehavior": true
+}
