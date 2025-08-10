@@ -130,15 +130,7 @@ class YouTubeBot {
         }
         profileLogger.logStep('gmailLogin', true);
         
-        // Navigate to YouTube
-        await this.retryOperation(
-          () => youtubeBot.goToYouTube(),
-          'YouTube navigation',
-          profileLogger
-        );
-        profileLogger.logStep('youtubeNavigation', true);
-        
-        // Create YouTube channel
+        // Create YouTube channel (this will navigate to studio.youtube.com)
         await this.retryOperation(
           () => youtubeBot.createYouTubeChannel(),
           'Channel creation',

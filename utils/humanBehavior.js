@@ -170,6 +170,28 @@ class HumanBehavior {
     }
     return false;
   }
+
+  // Human idle activity to appear less bot-like (move mouse, scroll, random waits)
+  async idleHumanActivity(durationMs = 20000) {
+    const start = Date.now();
+    while (Date.now() - start < durationMs) {
+      // Random small mouse move
+      const vp = this.page.viewport() || { width: 1280, height: 720 };
+      const x = Math.floor(50 + Math.random() * (vp.width - 100));
+      const y = Math.floor(50 + Math.random() * (vp.height - 100));
+      try {
+        await this.cursor.move(x, y);
+      } catch {}
+      await this.randomDelay(300, 900);
+      // Random small scroll
+      const dir = Math.random() < 0.5 ? 'down' : 'up';
+      await this.naturalScroll(dir, 100 + Math.floor(Math.random() * 200));
+      // Occasional longer pause
+      if (Math.random() < 0.3) {
+        await this.randomDelay(1200, 2500);
+      }
+    }
+  }
 }
 
 module.exports = HumanBehavior; 

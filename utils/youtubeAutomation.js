@@ -333,86 +333,196 @@ class YouTubeAutomation {
         this.logger.logVideoUpload(videoPath, false, { status: 'upload_page_after_auth' });
       }
 
-      // Step 4: Find and use file input for video selection
-      this.logger.logVideoUpload(videoPath, false, { status: 'looking_for_file_input' });
+      // Step 4: Use Tab key navigation to find and click the "Select files" button
+      this.logger.logVideoUpload(videoPath, false, { status: 'using_tab_navigation_to_find_select_files' });
       await this.human.randomDelay(3000, 5000);
       
-      // Comprehensive file input selectors
-      const fileInputSelectors = [
-        'input[type="file"]',
-        'input[accept*="video"]',
-        'input[accept*="mp4"]',
-        'input[accept*="avi"]',
-        'input[accept*="mov"]',
-        'input[accept*="mkv"]',
-        'input[accept*="wmv"]',
-        'input[accept*="flv"]',
-        'input[data-testid="file-input"]',
-        'input[aria-label*="file"]',
-        'input[aria-label*="video"]',
-        'input[aria-label*="upload"]',
-        'input[data-testid="upload-input"]',
-        'input[data-testid="file-upload"]',
-        'input[class*="file"]',
-        'input[class*="upload"]',
-        'input[id*="file"]',
-        'input[id*="upload"]'
-      ];
+      // Take screenshot before starting tab navigation
+      await this.page.screenshot({ path: './logs/before-tab-navigation.png' });
       
+      let selectFilesButton = null;
       let fileInput = null;
       
-      // Try to find existing file input
-      for (const selector of fileInputSelectors) {
+      // Use tab navigation to find the "Select files" button
+      for (let tabCount = 0; tabCount < 20; tabCount++) {
         try {
-          fileInput = await this.page.$(selector);
-          if (fileInput) {
-            this.logger.logVideoUpload(videoPath, false, { status: 'file_input_found', selector });
-            break;
+          // Press Tab key
+          await this.page.keyboard.press('Tab');
+          await this.human.randomDelay(500, 1000);
+          
+          // Check if current element is the "Select files" button
+          const currentElement = await this.page.evaluate(() => {
+            const activeElement = document.activeElement;
+            if (activeElement) {
+              return {
+                tagName: activeElement.tagName,
+                textContent: activeElement.textContent?.trim(),
+                ariaLabel: activeElement.getAttribute('aria-label'),
+                dataTestId: activeElement.getAttribute('data-testid'),
+                className: activeElement.className,
+                id: activeElement.id,
+                type: activeElement.type
+              };
+            }
+            return null;
+          });
+          
+          this.logger.logVideoUpload(videoPath, false, { 
+            status: 'tab_navigation_step', 
+            tabCount: tabCount + 1, 
+            element: currentElement 
+          });
+          
+          // Check if we found the "Select files" button
+          if (currentElement && (
+            currentElement.textContent === 'Select files' ||
+            currentElement.textContent === 'Select Files' ||
+            currentElement.ariaLabel?.includes('Select files') ||
+            currentElement.ariaLabel?.includes('Select Files') ||
+            currentElement.dataTestId?.includes('select-files') ||
+            currentElement.dataTestId?.includes('upload-button')
+          )) {
+            this.logger.logVideoUpload(videoPath, false, { status: 'select_files_button_found_via_tab' });
+            
+            // Click the "Select files" button
+            await this.page.keyboard.press('Enter');
+            await this.human.randomDelay(2000, 3000);
+            
+            // Take screenshot after clicking
+            await this.page.screenshot({ path: './logs/after-select-files-click.png' });
+            
+            // Wait for file input to appear
+            await this.human.randomDelay(2000, 3000);
+            
+            // Look for file input that should now be visible
+            const fileInputSelectors = [
+              'input[type="file"]',
+              'input[accept*="video"]',
+              'input[accept*="mp4"]',
+              'input[accept*="avi"]',
+              'input[accept*="mov"]',
+              'input[accept*="mkv"]',
+              'input[accept*="wmv"]',
+              'input[accept*="flv"]'
+            ];
+            
+            for (const selector of fileInputSelectors) {
+              try {
+                fileInput = await this.page.$(selector);
+                if (fileInput) {
+                  this.logger.logVideoUpload(videoPath, false, { status: 'file_input_found_after_select_files', selector });
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            
+            if (fileInput) break;
           }
+          
+          // Also check for any button with "Select files" text using traditional selectors
+          if (!selectFilesButton) {
+            const selectFilesSelectors = [
+              'button:has-text("Select files")',
+              'button:has-text("Select Files")',
+              'button[aria-label*="Select files"]',
+              'button[aria-label*="Select Files"]',
+              'button[data-testid*="select-files"]',
+              'button[data-testid*="upload-button"]',
+              'div[role="button"]:has-text("Select files")',
+              'div[role="button"]:has-text("Select Files")'
+            ];
+            
+            for (const selector of selectFilesSelectors) {
+              try {
+                selectFilesButton = await this.page.$(selector);
+                if (selectFilesButton && await selectFilesButton.isVisible()) {
+                  this.logger.logVideoUpload(videoPath, false, { status: 'select_files_button_found_via_selector', selector });
+                  
+                  // Click the button
+                  await selectFilesButton.click();
+                  await this.human.randomDelay(2000, 3000);
+                  
+                  // Take screenshot after clicking
+                  await this.page.screenshot({ path: './logs/after-select-files-click.png' });
+                  
+                  // Wait for file input to appear
+                  await this.human.randomDelay(2000, 3000);
+                  
+                  // Look for file input
+                  const fileInputSelectors = [
+                    'input[type="file"]',
+                    'input[accept*="video"]',
+                    'input[accept*="mp4"]',
+                    'input[accept*="avi"]',
+                    'input[accept*="mov"]',
+                    'input[accept*="mkv"]',
+                    'input[accept*="wmv"]',
+                    'input[accept*="flv"]'
+                  ];
+                  
+                  for (const selector of fileInputSelectors) {
+                    try {
+                      fileInput = await this.page.$(selector);
+                      if (fileInput) {
+                        this.logger.logVideoUpload(videoPath, false, { status: 'file_input_found_after_select_files', selector });
+                        break;
+                      }
+                    } catch (e) {
+                      continue;
+                    }
+                  }
+                  
+                  if (fileInput) break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+          }
+          
+          if (fileInput) break;
+          
         } catch (e) {
+          this.logger.logVideoUpload(videoPath, false, { status: 'tab_navigation_error', error: e.message, tabCount: tabCount + 1 });
           continue;
         }
       }
       
-      // If no file input found, try to trigger upload areas
+      // If we still don't have a file input, try the original approach as fallback
       if (!fileInput) {
-        this.logger.logVideoUpload(videoPath, false, { status: 'trying_upload_areas' });
-        const uploadAreaSelectors = [
-          '[data-testid="upload-area"]',
-          '[data-testid="drop-zone"]',
-          '.upload-area',
-          '.drop-zone',
-          '[aria-label*="upload"]',
-          '[aria-label*="drop"]',
-          'div[role="button"][aria-label*="upload"]',
-          'div[role="button"][aria-label*="video"]',
-          'button[aria-label*="upload"]',
-          'button:has-text("Upload")',
-          'button:has-text("Select files")',
-          'button:has-text("Choose files")'
+        this.logger.logVideoUpload(videoPath, false, { status: 'fallback_to_original_approach' });
+        
+        // Comprehensive file input selectors
+        const fileInputSelectors = [
+          'input[type="file"]',
+          'input[accept*="video"]',
+          'input[accept*="mp4"]',
+          'input[accept*="avi"]',
+          'input[accept*="mov"]',
+          'input[accept*="mkv"]',
+          'input[accept*="wmv"]',
+          'input[accept*="flv"]',
+          'input[data-testid="file-input"]',
+          'input[aria-label*="file"]',
+          'input[aria-label*="video"]',
+          'input[aria-label*="upload"]',
+          'input[data-testid="upload-input"]',
+          'input[data-testid="file-upload"]',
+          'input[class*="file"]',
+          'input[class*="upload"]',
+          'input[id*="file"]',
+          'input[id*="upload"]'
         ];
         
-        for (const selector of uploadAreaSelectors) {
+        // Try to find existing file input
+        for (const selector of fileInputSelectors) {
           try {
-            const uploadArea = await this.page.$(selector);
-            if (uploadArea && await uploadArea.isVisible()) {
-              await uploadArea.click();
-              await this.human.randomDelay(2000, 3000);
-              
-              // Check if file input appeared
-              for (const inputSelector of fileInputSelectors) {
-                try {
-                  fileInput = await this.page.$(inputSelector);
-                  if (fileInput) {
-                    this.logger.logVideoUpload(videoPath, false, { status: 'file_input_found_after_click', selector: inputSelector });
-                    break;
-                  }
-                } catch (e) {
-                  continue;
-                }
-              }
-              
-              if (fileInput) break;
+            fileInput = await this.page.$(selector);
+            if (fileInput) {
+              this.logger.logVideoUpload(videoPath, false, { status: 'file_input_found_fallback', selector });
+              break;
             }
           } catch (e) {
             continue;
@@ -483,56 +593,126 @@ class YouTubeAutomation {
         }
       }
 
-      // Step 5: Upload the video file with better error handling
+      // Step 5: Upload the video file with improved file handling
       this.logger.logVideoUpload(videoPath, false, { status: 'uploading_file' });
+      
+      if (!fileInput) {
+        throw new Error('No file input element found after tab navigation and button clicks');
+      }
+      
       try {
-        // Try the standard upload method first
+        // Method 1: Try the standard upload method first
+        this.logger.logVideoUpload(videoPath, false, { status: 'trying_standard_upload_method' });
         await fileInput.uploadFile(videoPath);
-        this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_successfully' });
+        this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_successfully_standard' });
       } catch (uploadError) {
         this.logger.logVideoUpload(videoPath, false, { status: 'standard_upload_failed', error: uploadError.message });
         
-        // Try alternative upload method using page.evaluate
+        // Method 2: Try using file chooser approach
         try {
-          await this.page.evaluate((filePath) => {
-            const input = document.querySelector('input[type="file"]');
-            if (input) {
-              // Create a File object and set it to the input
-              const file = new File([''], filePath, { type: 'video/mp4' });
-              const dataTransfer = new DataTransfer();
-              dataTransfer.items.add(file);
-              input.files = dataTransfer.files;
-              
-              // Trigger change event
-              const event = new Event('change', { bubbles: true });
-              input.dispatchEvent(event);
-              
-              return true;
-            }
-            return false;
-          }, videoPath);
+          this.logger.logVideoUpload(videoPath, false, { status: 'trying_file_chooser_method' });
           
-          this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_alternative_method' });
-        } catch (altError) {
-          this.logger.logVideoUpload(videoPath, false, { status: 'alternative_upload_failed', error: altError.message });
+          // Wait for file chooser to appear
+          const [fileChooser] = await Promise.all([
+            this.page.waitForFileChooser({ timeout: 10000 }),
+            fileInput.click()
+          ]);
           
-          // Try one more approach - use keyboard shortcut
+          await this.human.randomDelay(1000, 2000);
+          await fileChooser.accept([videoPath]);
+          this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_successfully_chooser' });
+          
+        } catch (chooserError) {
+          this.logger.logVideoUpload(videoPath, false, { status: 'file_chooser_failed', error: chooserError.message });
+          
+          // Method 3: Try alternative upload method using page.evaluate
           try {
-            await this.page.keyboard.press('Control+O');
-            await this.human.randomDelay(2000, 3000);
+            this.logger.logVideoUpload(videoPath, false, { status: 'trying_evaluate_method' });
             
-            // Check if file dialog appeared or file was uploaded
-            const uploadComplete = await this.page.evaluate(() => {
-              return document.querySelector('input[type="file"]')?.files?.length > 0;
-            });
+            const uploadResult = await this.page.evaluate((filePath) => {
+              const input = document.querySelector('input[type="file"]');
+              if (input) {
+                // Create a File object and set it to the input
+                const file = new File([''], filePath, { type: 'video/mp4' });
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                input.files = dataTransfer.files;
+                
+                // Trigger change event
+                const event = new Event('change', { bubbles: true });
+                input.dispatchEvent(event);
+                
+                return true;
+              }
+              return false;
+            }, videoPath);
             
-            if (uploadComplete) {
-              this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_keyboard_method' });
+            if (uploadResult) {
+              this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_successfully_evaluate' });
             } else {
-              throw new Error('Keyboard upload method failed');
+              throw new Error('Evaluate method returned false');
             }
-          } catch (keyboardError) {
-            throw new Error(`All upload methods failed: ${uploadError.message}, ${altError.message}, ${keyboardError.message}`);
+            
+          } catch (evalError) {
+            this.logger.logVideoUpload(videoPath, false, { status: 'evaluate_method_failed', error: evalError.message });
+            
+            // Method 4: Try keyboard shortcut approach
+            try {
+              this.logger.logVideoUpload(videoPath, false, { status: 'trying_keyboard_shortcut_method' });
+              
+              // Focus on the file input and use keyboard shortcut
+              await fileInput.focus();
+              await this.human.randomDelay(500, 1000);
+              await this.page.keyboard.press('Control+O');
+              await this.human.randomDelay(2000, 3000);
+              
+              // Check if file dialog appeared or file was uploaded
+              const uploadComplete = await this.page.evaluate(() => {
+                const input = document.querySelector('input[type="file"]');
+                return input && input.files && input.files.length > 0;
+              });
+              
+              if (uploadComplete) {
+                this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_successfully_keyboard' });
+              } else {
+                throw new Error('Keyboard upload method failed - no files detected');
+              }
+              
+            } catch (keyboardError) {
+              this.logger.logVideoUpload(videoPath, false, { status: 'keyboard_method_failed', error: keyboardError.message });
+              
+              // Method 5: Last resort - try to simulate the file selection manually
+              try {
+                this.logger.logVideoUpload(videoPath, false, { status: 'trying_manual_simulation' });
+                
+                // Try to set the file path directly
+                await this.page.evaluate((filePath) => {
+                  const input = document.querySelector('input[type="file"]');
+                  if (input) {
+                    // Remove the readonly attribute if it exists
+                    input.removeAttribute('readonly');
+                    input.style.display = 'block';
+                    input.style.opacity = '1';
+                    input.style.visibility = 'visible';
+                    
+                    // Try to set the value directly
+                    input.value = filePath;
+                    
+                    // Trigger events
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    return true;
+                  }
+                  return false;
+                }, videoPath);
+                
+                this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_successfully_manual' });
+                
+              } catch (manualError) {
+                throw new Error(`All upload methods failed: ${uploadError.message}, ${chooserError.message}, ${evalError.message}, ${keyboardError.message}, ${manualError.message}`);
+              }
+            }
           }
         }
       }
@@ -819,174 +999,277 @@ class YouTubeAutomation {
   // New focused upload method following exact instructions
   async uploadVideoStepByStep(videoPath, metadata = {}) {
     try {
-      this.logger.logVideoUpload(videoPath, false, { status: 'starting_step_by_step_upload' });
+      console.log('🚀 Starting video upload process...');
+      this.logger.logVideoUpload(videoPath, false, { status: 'upload_started' });
+
+      // Step 1: We're already on studio.youtube.com from createYouTubeChannel, so just wait for it to be ready
+      console.log('📍 Already on YouTube Studio, waiting for page to be ready...');
+      await this.page.waitForFunction(() => document.readyState === 'complete', { timeout: 30000 });
+      await this.human.randomDelay(2000, 3000);
+
+      // Step 2: Use Tab key to find and click "Upload videos" button
+      console.log('📝 Using Tab key to find Upload videos button...');
       
-      // Step 1: Navigate directly to the upload page
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_1_navigating_directly_to_upload' });
-      await this.page.goto('https://studio.youtube.com/upload', { 
-        waitUntil: 'networkidle0', 
-        timeout: 30000 
-      });
+      // First, try to find the Create button or Upload videos button directly
+      let uploadButton = await this.page.$('button[aria-label="Upload videos"], button[aria-label*="Upload"], #create-icon, [data-testid="create-button"], ytcp-button-shape button[aria-label="Upload videos"]');
       
-      // Step 2: Wait for the page to load fully and stabilize
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_2_waiting_for_page_stabilization' });
-      await this.human.waitForPageLoad();
-      await this.human.randomDelay(5000, 8000);
+      if (uploadButton) {
+        console.log('✅ Found Upload/Create button directly, clicking it...');
+        await uploadButton.click();
+        await this.human.randomDelay(1000, 1500);
+        
+        // Take screenshot to verify the click worked
+        await this.page.screenshot({ path: './logs/after-create-click.png' });
+        console.log('📸 Screenshot saved: after-create-click.png');
+        
+        // If we clicked Create button, now find Upload videos option
+        const uploadOption = await this.page.$('tp-yt-paper-item#text-item-0, [aria-label*="Upload videos"], ytcp-paper-item[role="menuitem"]');
+        if (uploadOption) {
+          await uploadOption.click();
+          console.log('✅ Clicked Upload videos option');
+          await this.human.randomDelay(2000, 3000);
+          
+          // Take screenshot to verify we're on upload page
+          await this.page.screenshot({ path: './logs/after-upload-option-click.png' });
+          console.log('📸 Screenshot saved: after-upload-option-click.png');
+        } else {
+          console.log('⚠️ Upload videos option not found, trying alternative approach...');
+        }
+      } else {
+        // Fallback to Tab navigation
+        console.log('🔍 Using Tab navigation to find upload button...');
+        await this.page.keyboard.press('Tab');
+        await this.human.randomDelay(500, 1000);
+        
+        let uploadButtonFound = false;
+        for (let i = 0; i < 50; i++) {
+          const focusedElement = await this.page.evaluate(() => {
+            const el = document.activeElement;
+            if (!el) return '';
+            const ariaLabel = el.getAttribute('aria-label') || '';
+            const textContent = el.textContent || '';
+            const title = el.getAttribute('title') || '';
+            return `${ariaLabel} ${textContent} ${title}`.toLowerCase();
+          });
+          
+          console.log(`Tab ${i + 1}: Focused on: ${focusedElement}`);
+          
+          if (focusedElement.includes('upload videos') || focusedElement.includes('upload') || focusedElement.includes('create')) {
+            console.log('✅ Found Upload/Create button via Tab navigation');
+            await this.page.keyboard.press('Enter');
+            uploadButtonFound = true;
+            break;
+          }
+          
+          await this.page.keyboard.press('Tab');
+          await this.human.randomDelay(200, 400);
+        }
+        
+        if (!uploadButtonFound) {
+          throw new Error('Upload videos button not found via Tab navigation');
+        }
+      }
       
-      // Take screenshot to verify we're on the upload page
-      await this.page.screenshot({ path: './logs/upload-page-direct.png' });
-      this.logger.logVideoUpload(videoPath, false, { status: 'upload_page_loaded' });
+      await this.human.randomDelay(2000, 3000);
+
+      // Step 3: Use drag and drop method to upload video
+      console.log('📁 Using drag and drop to upload video file...');
       
-      // Step 3: Comprehensive wait for page to be fully interactive
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_3_waiting_for_full_interactivity' });
-      
-      // Wait for document to be ready
-      await this.page.waitForFunction(() => {
-        return document.readyState === 'complete';
-      }, { timeout: 30000 });
-      
-      // Wait for any loading overlays to disappear
-      await this.page.waitForFunction(() => {
-        const overlays = document.querySelectorAll('.overlay, .modal, .loading-overlay, [aria-hidden="true"]');
-        const loadingElements = document.querySelectorAll('[aria-label*="Loading"], [aria-label*="loading"], .loading, .spinner, .progress');
-        return overlays.length === 0 && loadingElements.length === 0;
-      }, { timeout: 30000 });
-      
-      // Wait for page to be interactive (no disabled elements)
-      await this.page.waitForFunction(() => {
-        const disabledElements = document.querySelectorAll('[disabled], [aria-disabled="true"]');
-        return disabledElements.length === 0;
-      }, { timeout: 30000 });
-      
-      // Additional wait for any animations to complete
-      await this.human.randomDelay(8000, 12000);
-      
-      // Take a screenshot to see the current state
-      await this.page.screenshot({ path: './logs/upload-page-stabilized.png' });
-      this.logger.logVideoUpload(videoPath, false, { status: 'upload_page_stabilized' });
-      
-      // Step 4: Upload video file
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_4_uploading_video_file' });
-      
-      // Ensure we have an absolute path to the video file
+      // Get absolute path to video file
       const absoluteVideoPath = path.resolve(videoPath);
-      this.logger.logVideoUpload(videoPath, false, { status: 'resolved_file_path', absolutePath: absoluteVideoPath });
+      console.log(`📂 Video path: ${absoluteVideoPath}`);
       
       // Check if file exists
       if (!await fs.pathExists(absoluteVideoPath)) {
         throw new Error(`Video file not found: ${absoluteVideoPath}`);
       }
       
-      // Look for file input element
-      const fileInput = await this.page.$('input[type="file"]');
-      if (!fileInput) {
-        throw new Error('File input not found on upload page');
+      // Wait for upload page to load
+      await this.page.waitForFunction(() => {
+        return document.querySelector('[data-testid="upload-drop-zone"], .upload-drop-zone, [aria-label*="upload"], [aria-label*="drop"], .drop-zone, #dropzone, input[type="file"]');
+      }, { timeout: 30000 });
+      
+      // Find drop zone or upload area
+      const dropZone = await this.page.$('[data-testid="upload-drop-zone"], .upload-drop-zone, [aria-label*="upload"], [aria-label*="drop"], .drop-zone, #dropzone');
+      
+      if (!dropZone) {
+        console.log('⚠️ Drop zone not found, trying alternative upload methods...');
+        
+        // Try to find file input directly
+        const fileInput = await this.page.$('input[type="file"]');
+        if (fileInput) {
+          console.log('✅ Found file input, using direct upload...');
+          await fileInput.uploadFile(absoluteVideoPath);
+          console.log('✅ File uploaded via direct file input');
+        } else {
+          throw new Error('Neither drop zone nor file input found for upload');
+        }
+      } else {
+        console.log('✅ Found drop zone, using drag and drop...');
+        
+        // Perform drag and drop simulation
+        await this.page.evaluate((filePath) => {
+          // Create a File object
+          const file = new File([''], filePath, { type: 'video/mp4' });
+          
+          // Create a DataTransfer object
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(file);
+          
+          // Find drop zone
+          const dropZone = document.querySelector('[data-testid="upload-drop-zone"], .upload-drop-zone, [aria-label*="upload"], [aria-label*="drop"], .drop-zone, #dropzone');
+          
+          if (dropZone) {
+            // Create drag and drop events
+            const dragEnterEvent = new DragEvent('dragenter', { dataTransfer });
+            const dragOverEvent = new DragEvent('dragover', { dataTransfer });
+            const dropEvent = new DragEvent('drop', { dataTransfer });
+            
+            // Dispatch events
+            dropZone.dispatchEvent(dragEnterEvent);
+            dropZone.dispatchEvent(dragOverEvent);
+            dropZone.dispatchEvent(dropEvent);
+          }
+        }, absoluteVideoPath);
+        
+        console.log('✅ Drag and drop simulation completed');
       }
+
+      // Step 4: Wait for upload dialog and monitor progress
+      console.log('⏳ Waiting for upload dialog...');
+      const dialogPath = '/html/body/ytcp-uploads-dialog/tp-yt-paper-dialog';
+      const progressLabel = 'span.progress-label.style-scope.ytcp-video-upload-progress';
+      const errorLabel = '.error-short.style-scope.ytcp-uploads-dialog';
       
-      // Upload the file
-      await fileInput.uploadFile(absoluteVideoPath);
-      this.logger.logVideoUpload(videoPath, false, { status: 'file_uploaded_successfully' });
-      
-      // Wait for upload to begin and processing to complete
-      await this.human.randomDelay(15000, 20000);
-      
-      // Take screenshot after file upload
-      await this.page.screenshot({ path: './logs/after-file-upload.png' });
-      this.logger.logVideoUpload(videoPath, false, { status: 'file_upload_completed' });
-      
-      // Step 5: Fill in title and description with robust handling
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_5_filling_metadata' });
-      
-      // Generate random title and description
-      const randomTitle = `Test Video ${Math.floor(Math.random() * 1000)} - ${new Date().toISOString().slice(0, 10)}`;
-      const randomDescription = `This is a test video uploaded on ${new Date().toLocaleDateString()}. Random description for testing purposes.`;
-      
-      // Wait for metadata form to be ready
-      await this.human.randomDelay(5000, 8000);
-      
-      // Wait for any loading indicators to disappear
-      await this.page.waitForFunction(() => {
-        const loadingElements = document.querySelectorAll('[aria-label*="Loading"], [aria-label*="loading"], .loading, .spinner');
-        return loadingElements.length === 0;
-      }, { timeout: 30000 });
-      
-      await this.page.waitForFunction(() => {
-        return document.readyState === 'complete' && !document.body.classList.contains('loading');
-      }, { timeout: 30000 });
-      
-      // Take screenshot before filling metadata
-      await this.page.screenshot({ path: './logs/before-metadata-fill.png' });
-      this.logger.logVideoUpload(videoPath, false, { status: 'metadata_form_ready' });
-      
-      // Fill title
-      this.logger.logVideoUpload(videoPath, false, { status: 'filling_title', title: randomTitle });
-      await this.fillVideoField('title', randomTitle, [
-        'input[name="title"]',
-        'input[placeholder*="title"]',
-        'input[placeholder*="Title"]',
-        'input[aria-label*="title"]',
-        'input[aria-label*="Title"]',
-        'textarea[name="title"]',
-        'textarea[placeholder*="title"]',
-        'textarea[placeholder*="Title"]'
-      ]);
-      
-      await this.human.randomDelay(2000, 3000);
-      
-      // Fill description
-      this.logger.logVideoUpload(videoPath, false, { status: 'filling_description', description: randomDescription });
-      await this.fillVideoField('description', randomDescription, [
-        'textarea[name="description"]',
-        'textarea[placeholder*="description"]',
-        'textarea[placeholder*="Description"]',
-        'textarea[aria-label*="description"]',
-        'textarea[aria-label*="Description"]',
-        'input[name="description"]',
-        'input[placeholder*="description"]',
-        'input[placeholder*="Description"]'
-      ]);
-      
-      await this.human.randomDelay(3000, 5000);
-      
-      // Take screenshot after filling metadata
-      await this.page.screenshot({ path: './logs/after-metadata-fill.png' });
-      this.logger.logVideoUpload(videoPath, false, { status: 'metadata_filled_successfully' });
-      
-      // Step 6: Navigate through the upload process
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_6_navigating_upload_process' });
-      
-      // Click Next button (first time)
-      await this.clickNextButton();
-      await this.human.randomDelay(3000, 5000);
-      
-      // Click Next button (second time)
-      await this.clickNextButton();
-      await this.human.randomDelay(3000, 5000);
-      
-      // Click Next button (third time)
-      await this.clickNextButton();
-      await this.human.randomDelay(3000, 5000);
-      
-      // Step 7: Set visibility to Public
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_7_setting_visibility' });
-      await this.setVisibilityToPublic();
-      await this.human.randomDelay(3000, 5000);
-      
-      // Step 8: Publish the video
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_8_publishing_video' });
-      await this.publishVideo();
-      
-      // Step 9: Wait for confirmation
-      this.logger.logVideoUpload(videoPath, false, { status: 'step_9_waiting_for_confirmation' });
-      await this.waitForPublishConfirmation();
-      
-      this.logger.logVideoUpload(videoPath, true, { status: 'video_published_successfully' });
-      return true;
-      
+      const youtubeUploadDialog = await this.page.waitForXPath(dialogPath);
+      console.log('✅ Upload dialog found');
+
+      // Step 5: Monitor upload progress
+      let stage = 0, percentage = 0, timeoutms = 500;
+      const maxTimeout = 30000; // 30 seconds max timeout
+
+      const monitorProgress = async (ms) => {
+        if (ms >= maxTimeout) {
+          console.log('⚠️ Upload timeout reached');
+          return;
+        }
+
+        try {
+          const error = await youtubeUploadDialog.$eval(errorLabel, (el) => el.innerHTML);
+          const progress = await youtubeUploadDialog.$eval(progressLabel, (el) => el.innerHTML);
+
+          if (error.toLowerCase() === 'daily upload limit reached') {
+            throw new Error('Daily upload limit reached');
+          }
+
+          const [state, ...parameters] = progress.toLowerCase().split(' ');
+          console.log(`📊 Progress: ${progress}`);
+
+          // Stage 1 - Uploading
+          if (state.startsWith('upload')) {
+            if (parameters[0] === 'complete' || parameters[0] === '100%') {
+              stage = 1;
+              console.log('✅ Upload completed, proceeding to finalization...');
+              const uploadedLink = await this.finalizeUpload(youtubeUploadDialog, videoPath, metadata);
+              console.log('🎉 Video published successfully!');
+              this.logger.logVideoUpload(videoPath, true, { status: 'video_published_successfully' });
+              return uploadedLink;
+            }
+
+            const currentPercent = +parameters[0].slice(0, -1);
+            if (currentPercent === percentage) {
+              ms += timeoutms; // Increase timeout if stuck
+            }
+            percentage = currentPercent;
+          }
+
+          // Continue monitoring
+          await new Promise(resolve => setTimeout(async () => {
+            await monitorProgress(ms);
+            resolve(null);
+          }, ms));
+
+        } catch (error) {
+          console.error('❌ Error monitoring progress:', error.message);
+          throw error;
+        }
+      };
+
+      await monitorProgress(timeoutms);
+
     } catch (error) {
+      console.error('❌ Error during video upload:', error.message);
       this.logger.logError(error, 'uploadVideoStepByStep');
+      this.logger.logVideoUpload(videoPath, false, { 
+        status: 'upload_failed_with_error', 
+        error: error.message,
+        errorType: error.constructor.name
+      });
+
+      try {
+        await this.page.screenshot({ path: './logs/upload-error-state.png' });
+      } catch (screenshotError) {
+        console.error('❌ Failed to take error screenshot:', screenshotError.message);
+      }
+
       throw error;
     }
+  }
+
+  async finalizeUpload(youtubeUploadDialog, videoPath, metadata) {
+    console.log('📝 Finalizing upload...');
+    
+    // Wait for dialog to be ready
+    await this.page.waitForTimeout(3000);
+
+    // Fill title and description
+    const textElementSelector = '#textbox';
+    const [titleElement, descriptionElement] = await youtubeUploadDialog.$$(textElementSelector);
+    
+    // Fill title
+    await titleElement.click();
+    await titleElement.evaluateHandle((el) => {
+      el.innerHTML = '';
+    });
+    await titleElement.type(metadata.title || 'Test Video Title', { delay: 100 });
+    
+    // Fill description
+    await descriptionElement.click();
+    await descriptionElement.evaluateHandle((el) => {
+      el.innerHTML = '';
+    });
+    await descriptionElement.type(metadata.description || 'Test video description', { delay: 100 });
+
+    // Set "Not made for kids"
+    const notMadeForKidSelector = 'VIDEO_MADE_FOR_KIDS_NOT_MFK';
+    const radioButton = await youtubeUploadDialog.$(`[name=${notMadeForKidSelector}]`);
+    await radioButton?.click();
+
+    // Click Next buttons
+    const nextButtonSelector = '#next-button';
+    await (await youtubeUploadDialog.$(nextButtonSelector))?.click({ delay: 100 });
+    await this.page.waitForTimeout(1000);
+    
+    await (await youtubeUploadDialog.$(nextButtonSelector))?.click({ delay: 100 });
+    await this.page.waitForTimeout(1000);
+    
+    await (await youtubeUploadDialog.$(nextButtonSelector))?.click({ delay: 100 });
+    await this.page.waitForTimeout(1000);
+
+    // Set visibility to Public
+    const visibilityRadio = await youtubeUploadDialog.$('#privacy-radios [name=PUBLIC]');
+    await visibilityRadio?.click();
+
+    // Click Done
+    await this.page.waitForTimeout(1000);
+    await (await youtubeUploadDialog.$('#done-button'))?.click({ delay: 100 });
+    await this.page.waitForTimeout(5000);
+
+    // Get the uploaded video link
+    const videoLinkSelector = 'a.style-scope.ytcp-video-info';
+    const link = await youtubeUploadDialog?.$eval(videoLinkSelector, (el) => el.innerHTML);
+    
+    return link || '';
   }
 
   // Helper method to click Next button
