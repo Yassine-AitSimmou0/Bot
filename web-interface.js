@@ -25,7 +25,9 @@ let botStatus = {
   totalAccounts: 0,
   currentAccount: null,
   startTime: null,
-  estimatedTimeRemaining: null
+  estimatedTimeRemaining: null,
+  lastError: null,
+  uploadStatus: 'idle' // 'idle', 'uploading', 'success', 'failed'
 };
 
 // Global bot instance for proper stopping
@@ -357,7 +359,9 @@ app.post('/start-bot', async (req, res) => {
       totalAccounts: accounts.length,
       currentAccount: null,
       startTime: new Date(),
-      estimatedTimeRemaining: null
+      estimatedTimeRemaining: null,
+      lastError: null,
+      uploadStatus: 'idle'
     };
 
     // Emit status update
@@ -389,11 +393,13 @@ app.post('/start-bot', async (req, res) => {
           botStatus.isRunning = false;
           botStatus.progress = 100;
           botStatus.currentAccount = null;
+          botStatus.uploadStatus = 'success';
         } else {
           logger.info('Bot stopped by user request');
           botStatus.isRunning = false;
           botStatus.progress = 0;
           botStatus.currentAccount = null;
+          botStatus.uploadStatus = 'idle';
         }
         clearInterval(statusInterval);
         currentBotInstance = null;
@@ -403,6 +409,8 @@ app.post('/start-bot', async (req, res) => {
         logger.error('Bot error:', error.message);
         botStatus.isRunning = false;
         botStatus.currentAccount = null;
+        botStatus.lastError = error.message;
+        botStatus.uploadStatus = 'failed';
         clearInterval(statusInterval);
         currentBotInstance = null;
         io.emit('bot-status-update', botStatus);
@@ -433,6 +441,7 @@ app.post('/stop-bot', async (req, res) => {
     botStatus.isRunning = false;
     botStatus.progress = 0;
     botStatus.currentAccount = null;
+    botStatus.uploadStatus = 'idle';
 
     // Try to stop the bot instance if it exists
     if (currentBotInstance && typeof currentBotInstance.stop === 'function') {

@@ -171,6 +171,34 @@ class HumanBehavior {
     return false;
   }
 
+  // Check for login challenges (phone verification, security questions, etc.)
+  async checkForLoginChallenge() {
+    const challengeSelectors = [
+      'div:has-text("Verify it\'s you")',
+      'div:has-text("Verify it is you")',
+      'div:has-text("Phone number")',
+      'div:has-text("Security question")',
+      'div:has-text("Backup codes")',
+      'div:has-text("2-Step Verification")',
+      'div:has-text("Choose how you want to sign in")',
+      'input[type="tel"]',
+      'input[name="phoneNumber"]',
+      'select[name="phoneCountryCode"]'
+    ];
+
+    for (const selector of challengeSelectors) {
+      try {
+        const challenge = await this.page.$(selector);
+        if (challenge) {
+          return true;
+        }
+      } catch (error) {
+        // Continue checking other selectors
+      }
+    }
+    return false;
+  }
+
   // Human idle activity to appear less bot-like (move mouse, scroll, random waits)
   async idleHumanActivity(durationMs = 20000) {
     const start = Date.now();

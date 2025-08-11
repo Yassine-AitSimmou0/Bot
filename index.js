@@ -103,6 +103,7 @@ class YouTubeBot {
       const profileLogger = new ProfileLogger(account.email, `attempt_${attempt}`);
       let profileId = null;
       let success = false;
+      let uploadSuccess = false;
 
       try {
         logger.info(`[${account.email}] Attempt ${attempt}/${maxRetries}`);
@@ -138,17 +139,39 @@ class YouTubeBot {
         );
         profileLogger.logStep('channelCreated', true);
         
-        // Upload videos
-        const uploadedCount = await youtubeBot.uploadMultipleVideos();
-        logger.info(`[${account.email}] Uploaded ${uploadedCount} videos successfully`);
+        // Upload videos with better error handling
+        try {
+          const uploadedCount = await youtubeBot.uploadMultipleVideos();
+          logger.info(`[${account.email}] Uploaded ${uploadedCount} videos successfully`);
+          
+          if (uploadedCount > 0) {
+            uploadSuccess = true;
+            profileLogger.logStep('videosUploaded', true, { uploadedCount });
+          } else {
+            profileLogger.logStep('videosUploaded', false, { error: 'No videos were uploaded successfully' });
+            logger.warn(`[${account.email}] No videos were uploaded successfully`);
+          }
+        } catch (uploadError) {
+          profileLogger.logStep('videosUploaded', false, { error: uploadError.message });
+          logger.error(`[${account.email}] Video upload failed:`, uploadError.message);
+          
+          // Continue with the process even if upload fails
+          // This allows us to save cookies and complete the profile
+        }
         
         // Save session cookies
         await youtubeBot.saveCookies();
         
         success = true;
         profileLogger.complete(true);
-        logger.info(`[${account.email}] Successfully completed processing`);
-        return true;
+        
+        if (uploadSuccess) {
+          logger.info(`[${account.email}] Successfully completed processing with video uploads`);
+        } else {
+          logger.info(`[${account.email}] Completed processing but no videos were uploaded`);
+        }
+        
+        return uploadSuccess; // Return true only if videos were uploaded successfully
         
       } catch (error) {
         lastError = error;
