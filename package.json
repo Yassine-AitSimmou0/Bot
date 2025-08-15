@@ -10,6 +10,7 @@
     "test": "node test.js",
     "test-single": "node test-single-account.js",
     "test-api": "node test-api.js",
+    "update-token": "node update-token.js",
     "build-css": "tailwindcss -i ./src/input.css -o ./public/styles.css --watch"
   },
   "keywords": [

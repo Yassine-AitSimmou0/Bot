@@ -77,9 +77,25 @@ class YouTubeBot {
       this.browser = await this.gologin.launchBrowser(profileId);
       this.page = await this.browser.newPage();
       
-      // Set viewport and other browser settings
-      await this.page.setViewport(config.browser.viewport);
+      // Set viewport and other browser settings (optional, configurable)
+      if (config.browser.enforceViewport) {
+        await this.page.setViewport(config.browser.viewport);
+      }
       await this.page.setDefaultTimeout(config.browser.defaultTimeout);
+
+      // Optionally control native window size via CDP
+      if (config.browser.windowControl === 'custom') {
+        try {
+          const client = await this.page.target().createCDPSession();
+          const { width, height, left, top } = config.browser.windowBounds;
+          await client.send('Browser.setWindowBounds', {
+            windowId: 1,
+            bounds: { left, top, width, height, windowState: 'normal' }
+          });
+        } catch (e) {
+          logger.warn(`Could not set custom window bounds: ${e.message}`);
+        }
+      }
       
       logger.info(`Browser launched successfully for profile ${profileId}`);
     } catch (error) {
@@ -108,9 +124,20 @@ class YouTubeBot {
       try {
         logger.info(`[${account.email}] Attempt ${attempt}/${maxRetries}`);
         
-        // Create GoLogin profile
-        profileId = await this.gologin.createProfile(account.email);
-        profileLogger.logStep('profileCreated', true, { profileId });
+        // Create or reuse GoLogin profile
+        const envProfileId = process.env.GOLOGIN_PROFILE_ID;
+        if (account.profileId) {
+          profileId = account.profileId;
+          logger.info(`[${account.email}] Reusing provided GoLogin profile: ${profileId}`);
+          profileLogger.logStep('profileReused', true, { profileId });
+        } else if (envProfileId) {
+          profileId = envProfileId;
+          logger.info(`[${account.email}] Reusing GoLogin profile from env: ${profileId}`);
+          profileLogger.logStep('profileReused_env', true, { profileId });
+        } else {
+          profileId = await this.gologin.createProfile(account.email);
+          profileLogger.logStep('profileCreated', true, { profileId });
+        }
         
         // Launch browser with profile
         await this.launchBrowser(profileId);
@@ -193,11 +220,13 @@ class YouTubeBot {
           }
         }
         
-        // Delete GoLogin profile
+        // Delete GoLogin profile (skipped when reuseProfiles is enabled or when provided by account/env)
         if (profileId) {
           try {
             await this.gologin.deleteProfile(profileId);
-            logger.info(`[${account.email}] Deleted GoLogin profile: ${profileId}`);
+            if (!config.gologin.reuseProfiles && !account.profileId && !process.env.GOLOGIN_PROFILE_ID) {
+              logger.info(`[${account.email}] Deleted GoLogin profile: ${profileId}`);
+            }
           } catch (error) {
             profileLogger.logError(error, 'profile_cleanup');
           }

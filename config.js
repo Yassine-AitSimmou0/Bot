@@ -3,9 +3,13 @@ require('dotenv').config();
 module.exports = {
   // GoLogin API Configuration
   gologin: {
-    apiToken: process.env.GOLOGIN_API_TOKEN,
+    apiToken: process.env.GOLOGIN_API_TOKEN || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODlmMDM5MGMxYTFjNGQxOGZkMDNiMmUiLCJ0eXBlIjoiZGV2Iiwiand0aWQiOiI2ODlmMDNkOTEyNmIwMjA3NzNiNWY4MmQifQ.ijk2DMdGDqdfqiMGlv6SWEM3_7fs7LIrGWhKHb_bngw',
     baseUrl: 'https://gologin.com/api',
-    profileName: 'YouTube Bot Profile'
+    profileName: 'YouTube Bot Profile',
+    // Reuse created profiles instead of creating/deleting each run
+    reuseProfiles: true,
+    // Directory to store per-account profile metadata
+    profilesDir: './profiles'
   },
 
   // YouTube Configuration
@@ -28,7 +32,13 @@ module.exports = {
     headless: false,
     slowMo: 50,
     defaultTimeout: 30000,
-    viewport: { width: 1920, height: 1080 }
+    viewport: { width: 1920, height: 1080 },
+    // If true, forces Puppeteer viewport to the value above; if false, leaves viewport as-is
+    enforceViewport: false,
+    // Window control: 'none' to not force OS window size, 'custom' to apply windowBounds below via CDP
+    windowControl: 'none',
+    // Only used when windowControl === 'custom'
+    windowBounds: { width: 1280, height: 800, left: 0, top: 0 }
   },
 
   // Logging Configuration

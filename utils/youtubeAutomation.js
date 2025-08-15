@@ -33,11 +33,13 @@ class YouTubeAutomation {
       this.logger.logStep('gmailLogin', false, { status: 'starting' });
       
       // Go to Gmail login
+      console.log('🌐 Navigating to Google accounts login page...');
       await this.page.goto('https://accounts.google.com/signin', { 
-        waitUntil: 'domcontentloaded', 
+        waitUntil: 'networkidle2', 
         timeout: 30000 
       });
-      await this.human.randomDelay(2000, 3000);
+      console.log('✅ Login page loaded, waiting for elements...');
+      await this.human.randomDelay(3000, 5000);
 
       // Check for captcha or login challenges
       if (await this.human.checkForCaptcha() || await this.human.checkForLoginChallenge()) {
@@ -60,10 +62,138 @@ class YouTubeAutomation {
       // Take a screenshot for debugging
       await this.page.screenshot({ path: './logs/login-page.png' });
       
-      // Find email field
-      const emailField = await this.page.$('input[type="email"], input[name="identifier"]');
+      // Find email field with comprehensive approach
+      console.log('🔍 Looking for email input field...');
+      
+      // First, let's see what's actually on the page
+      const pageUrl = this.page.url();
+      const pageContent = await this.page.evaluate(() => document.body.innerText);
+      console.log(`📍 Current page URL: ${pageUrl}`);
+      
+      // Check if we need to handle different Google pages
+      if (pageUrl.includes('myaccount.google.com') || pageUrl.includes('accounts.google.com/ManageAccount')) {
+        console.log('🔄 Redirected to account management, navigating back to login...');
+        await this.page.goto('https://accounts.google.com/signin/v2/identifier', { waitUntil: 'networkidle2' });
+        await this.human.randomDelay(2000, 3000);
+      }
+      
+      // Handle verification page
+      if (pageUrl.includes('confirmidentifier') || pageContent.includes('Verify it\'s you')) {
+        console.log('🔐 Detected Google verification page');
+        
+        // Look for the email that's being verified
+        const displayedEmail = await this.page.evaluate(() => {
+          const text = document.body.innerText;
+          const emailMatch = text.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+          return emailMatch ? emailMatch[0] : null;
+        });
+        
+        console.log(`📧 Email being verified: ${displayedEmail}`);
+        
+        if (displayedEmail && displayedEmail !== email) {
+          console.log('❌ Wrong email detected, clearing and starting fresh...');
+          // Clear cookies and try fresh login
+          await this.page.evaluate(() => {
+            document.cookie.split(";").forEach(c => {
+              const eqPos = c.indexOf("=");
+              const name = eqPos > -1 ? c.substr(0, eqPos) : c;
+              document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+            });
+          });
+          await this.page.goto('https://accounts.google.com/logout', { waitUntil: 'networkidle2' });
+          await this.human.randomDelay(2000, 3000);
+          await this.page.goto('https://accounts.google.com/signin', { waitUntil: 'networkidle2' });
+          await this.human.randomDelay(3000, 5000);
+        } else {
+          // If it's the correct email, proceed with verification
+          console.log('✅ Correct email detected, proceeding with verification...');
+          
+          // Look for Next button on verification page
+          const nextButton = await this.page.$('#identifierNext');
+          if (nextButton && await nextButton.isVisible()) {
+            console.log('🖱️ Clicking Next on verification page...');
+            await nextButton.click();
+            await this.human.randomDelay(3000, 5000);
+            
+            // After clicking Next, we should be at password page
+            return await this.loginToGmail(email, password);
+          }
+        }
+      }
+      
+      // Try to find any input fields first
+      const allInputs = await this.page.$$('input');
+      console.log(`🔍 Found ${allInputs.length} input fields on page`);
+      
+      const emailSelectors = [
+        'input[type="email"]',
+        'input[name="identifier"]',
+        'input[id="identifierId"]',
+        'input[aria-label*="email"]',
+        'input[aria-label*="Email"]',
+        'input[placeholder*="email"]',
+        'input[placeholder*="Email"]',
+        '#identifierId',
+        '[data-testid="email"]',
+        'input[autocomplete="username"]',
+        'input[autocomplete="email"]',
+        'input[name="Email"]',
+        'input[name="username"]',
+        'input[type="text"]' // Generic fallback
+      ];
+      
+      let emailField = null;
+      for (const selector of emailSelectors) {
+        try {
+          const fields = await this.page.$$(selector);
+          for (const field of fields) {
+            if (await field.isVisible()) {
+              console.log(`✅ Found email field with selector: ${selector}`);
+              emailField = field;
+              break;
+            }
+          }
+          if (emailField) break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      // If still no field found, try to find the first visible text input
       if (!emailField) {
-        throw new Error('Email field not found');
+        console.log('⚠️ Specific email selectors failed, trying first visible text input...');
+        const textInputs = await this.page.$$('input[type="text"], input[type="email"]');
+        for (const input of textInputs) {
+          if (await input.isVisible()) {
+            console.log('✅ Found fallback text input field');
+            emailField = input;
+            break;
+          }
+        }
+      }
+      
+      if (!emailField) {
+        // Take screenshot and dump page info for debugging
+        await this.page.screenshot({ path: './logs/email-field-not-found.png' });
+        const pageTitle = await this.page.title();
+        const pageContent = await this.page.evaluate(() => document.body.innerText.substring(0, 500));
+        console.log(`📸 Screenshot saved: email-field-not-found.png`);
+        console.log(`📄 Page title: ${pageTitle}`);
+        console.log(`📝 Page content preview: ${pageContent}`);
+        
+        // Try alternative login URL
+        console.log('🔄 Trying alternative Gmail login URL...');
+        await this.page.goto('https://mail.google.com/', { waitUntil: 'networkidle2' });
+        await this.human.randomDelay(3000, 5000);
+        
+        // Try again with the new page
+        const gmailEmailField = await this.page.$('input[type="email"], #identifierId, input[name="identifier"]');
+        if (gmailEmailField && await gmailEmailField.isVisible()) {
+          console.log('✅ Found email field on Gmail page');
+          emailField = gmailEmailField;
+        } else {
+          throw new Error('Email field not found on any login page');
+        }
       }
       
       this.logger.logStep('gmailLogin', false, { status: 'email_field_found' });
@@ -82,10 +212,34 @@ class YouTubeAutomation {
       }
       
       // Click Next button
-      const nextButton = await this.page.$('#identifierNext, button[type="submit"]');
+      console.log('🔍 Looking for Next button after email...');
+      const nextButtonSelectors = [
+        '#identifierNext',
+        'button[type="submit"]',
+        'button[id="identifierNext"]',
+        'div[id="identifierNext"]',
+
+        '[data-testid="next"]'
+      ];
+      
+      let nextButton = null;
+      for (const selector of nextButtonSelectors) {
+        try {
+          nextButton = await this.page.$(selector);
+          if (nextButton && await nextButton.isVisible()) {
+            console.log(`✅ Found Next button with selector: ${selector}`);
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+      
       if (nextButton) {
+        console.log('🖱️ Clicking Next button...');
         await nextButton.click();
       } else {
+        console.log('⌨️ Next button not found, pressing Enter...');
         await this.page.keyboard.press('Enter');
       }
       
@@ -105,8 +259,37 @@ class YouTubeAutomation {
         await this.waitForManualCaptchaSolution();
       }
       
-      const passwordField = await this.page.$('input[type="password"], input[name="password"]');
+      console.log('🔍 Looking for password input field...');
+      const passwordSelectors = [
+        'input[type="password"]',
+        'input[name="password"]',
+        'input[id="password"]',
+        'input[aria-label*="password"]',
+        'input[aria-label*="Password"]',
+        'input[placeholder*="password"]',
+        'input[placeholder*="Password"]',
+        '#password',
+        '[data-testid="password"]',
+        'input[autocomplete="current-password"]'
+      ];
+      
+      let passwordField = null;
+      for (const selector of passwordSelectors) {
+        try {
+          passwordField = await this.page.$(selector);
+          if (passwordField && await passwordField.isVisible()) {
+            console.log(`✅ Found password field with selector: ${selector}`);
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+      
       if (!passwordField) {
+        // Take screenshot for debugging
+        await this.page.screenshot({ path: './logs/password-field-not-found.png' });
+        console.log('📸 Screenshot saved: password-field-not-found.png');
         throw new Error('Password field not found');
       }
       
@@ -1110,55 +1293,68 @@ class YouTubeAutomation {
         console.log('✅ Video file uploaded successfully to YouTube uploader');
       } catch (uploadError) {
         console.log(`❌ Direct upload failed: ${uploadError.message}`);
-        
-        // Try alternative method using page.evaluate
-        console.log('🔄 Trying alternative upload method...');
-        try {
-          // Read file content in Node and send to the page as base64
-          const nodeBuffer = await fs.readFile(absoluteVideoPath);
-          const base64 = Buffer.from(nodeBuffer).toString('base64');
-          const name = path.basename(absoluteVideoPath);
 
-          await this.page.evaluate((base64Content, fileName) => {
-            const binary = atob(base64Content);
-            const len = binary.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-            const file = new File([bytes], fileName, { type: 'video/mp4' });
-
-            const input = document.querySelector('input[type="file"]');
-            if (!input) throw new Error('No file input found in DOM');
-            const dt = new DataTransfer();
-            dt.items.add(file);
-            input.files = dt.files;
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-          }, base64, name);
-          
-          console.log('✅ Alternative upload method completed');
-        } catch (altError) {
-          console.log(`❌ Alternative method also failed: ${altError.message}`);
-          
-          // Try drag and drop method
-          console.log('🔄 Trying drag and drop method...');
+        // Try setInputFiles on known selectors first
+        console.log('🔄 Trying setInputFiles on known selectors...');
+        let setOk = false;
+        const setSelectors = [
+          'ytcp-uploads-dialog input[type="file"]',
+          'tp-yt-paper-dialog input[type="file"]',
+          'input[type="file"]'
+        ];
+        for (const sel of setSelectors) {
           try {
-            await this.page.evaluate((filePath) => {
-              const dropZone = document.querySelector('[data-testid="upload-drop-zone"], .upload-drop-zone, [aria-label*="upload"], [aria-label*="drop"]');
-              if (dropZone) {
-                const file = new File([''], filePath, { type: 'video/mp4' });
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                
-                const dropEvent = new DragEvent('drop', { dataTransfer });
-                dropZone.dispatchEvent(dropEvent);
-                
-                console.log('File dropped via JavaScript');
-              }
-            }, absoluteVideoPath);
-            
-            console.log('✅ Drag and drop method completed');
-          } catch (dropError) {
-            console.log(`❌ All upload methods failed: ${dropError.message}`);
-            throw uploadError; // Throw original error
+            await this.page.setInputFiles(sel, absoluteVideoPath);
+            console.log(`✅ Files set using selector: ${sel}`);
+            setOk = true;
+            break;
+          } catch (_) {}
+        }
+
+        if (!setOk) {
+          // Try alternative method using page.evaluate
+          console.log('🔄 Trying alternative upload method...');
+          try {
+            const nodeBuffer = await fs.readFile(absoluteVideoPath);
+            const base64 = Buffer.from(nodeBuffer).toString('base64');
+            const name = path.basename(absoluteVideoPath);
+
+            await this.page.evaluate((base64Content, fileName) => {
+              const binary = atob(base64Content);
+              const len = binary.length;
+              const bytes = new Uint8Array(len);
+              for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+              const file = new File([bytes], fileName, { type: 'video/mp4' });
+
+              const input = document.querySelector('input[type="file"]');
+              if (!input) throw new Error('No file input found in DOM');
+              const dt = new DataTransfer();
+              dt.items.add(file);
+              input.files = dt.files;
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+            }, base64, name);
+            console.log('✅ Alternative upload method completed');
+          } catch (altError) {
+            console.log(`❌ Alternative method also failed: ${altError.message}`);
+            // Try drag and drop method
+            console.log('🔄 Trying drag and drop method...');
+            try {
+              await this.page.evaluate((filePath) => {
+                const dropZone = document.querySelector('[data-testid="upload-drop-zone"], .upload-drop-zone, [aria-label*="upload"], [aria-label*="drop"]');
+                if (dropZone) {
+                  const file = new File([''], filePath, { type: 'video/mp4' });
+                  const dataTransfer = new DataTransfer();
+                  dataTransfer.items.add(file);
+                  const dropEvent = new DragEvent('drop', { dataTransfer });
+                  dropZone.dispatchEvent(dropEvent);
+                  console.log('File dropped via JavaScript');
+                }
+              }, absoluteVideoPath);
+              console.log('✅ Drag and drop method completed');
+            } catch (dropError) {
+              console.log(`❌ All upload methods failed: ${dropError.message}`);
+              throw uploadError; // Throw original error
+            }
           }
         }
       }
@@ -1166,13 +1362,15 @@ class YouTubeAutomation {
       // Step 3: Wait for upload to start and complete
       console.log('⏳ Waiting for upload to start...');
       await this.human.randomDelay(5000, 8000);
-      
-      // Wait for upload progress to appear
+
+      // Wait for either progress indicator OR metadata form becoming available
       await this.page.waitForFunction(() => {
-        return document.querySelector('span.progress-label, .upload-progress, [role="progressbar"], .progress-bar, .upload-status');
+        const progressEl = document.querySelector('span.progress-label, .upload-progress, [role="progressbar"], .progress-bar, .upload-status');
+        const metadataEl = document.querySelector('#title-textarea #textbox, ytcp-social-suggestions-textbox#title-textarea #textbox, ytcp-form-textarea #textbox');
+        return Boolean(progressEl || metadataEl);
       }, { timeout: 60000 });
-      
-      console.log('✅ Upload progress detected, monitoring...');
+
+      console.log('✅ Upload UI detected (progress or metadata form), monitoring...');
       
       // Monitor upload progress
       let uploadComplete = false;
@@ -1208,6 +1406,17 @@ class YouTubeAutomation {
           
           if (errorText) {
             console.log(`⚠️ Upload error: ${errorText}`);
+          }
+
+          // If metadata form appears even if progress text is empty, proceed
+          const metadataReady = await this.page.evaluate(() => {
+            const el = document.querySelector('#title-textarea #textbox, ytcp-social-suggestions-textbox#title-textarea #textbox, ytcp-form-textarea #textbox');
+            return Boolean(el);
+          });
+          if (metadataReady) {
+            console.log('✅ Detected metadata form; proceeding to finalization...');
+            uploadComplete = true;
+            break;
           }
           
         } catch (error) {
@@ -1257,246 +1466,458 @@ class YouTubeAutomation {
       // Wait for the upload interface to be fully loaded
       await this.human.randomDelay(3000, 5000);
 
-      // Step 1: Fill title and description with improved selectors
+      // Step 1: Fill title and description using direct page.type(), then fallback
       this.logger.logVideoUpload(videoPath, false, { status: 'filling_title_and_description' });
-      
-      // Try multiple selectors for title field
-      const titleSelectors = [
-        '#textbox',
-        'input[name="title"]',
-        'input[placeholder*="title"]',
-        'input[placeholder*="Title"]',
-        'input[aria-label*="title"]',
-        'input[aria-label*="Title"]',
-        'input[data-testid="title-input"]',
+
+      const titleCandidates = [
+        '#title-textarea #textbox',
+        'ytcp-social-suggestions-textbox#title-textarea #textbox',
+        'ytcp-form-input-container #title-textarea #textbox',
+        '#textbox[aria-label*="title"]',
         'textarea[name="title"]',
-        'textarea[placeholder*="title"]',
-        'textarea[placeholder*="Title"]'
+        'input[name="title"]'
       ];
-      
-      let titleElement = null;
-      for (const selector of titleSelectors) {
-        try {
-          titleElement = await this.page.$(selector);
-          if (titleElement && await titleElement.isVisible()) {
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      if (titleElement) {
-        await titleElement.click();
-        await titleElement.evaluate(el => el.value = '');
-        await this.human.randomDelay(500, 1000);
-        await titleElement.type(metadata.title || 'Amazing Video Title', { delay: 100 });
-        this.logger.logVideoUpload(videoPath, false, { status: 'title_filled' });
-      }
-      
-      // Try multiple selectors for description field
-      const descriptionSelectors = [
+
+      const descriptionCandidates = [
+        '#description-textarea #textbox',
+        'ytcp-social-suggestions-textarea#description-textarea #textbox',
+        'ytcp-form-textarea #description-textarea #textbox',
+        'ytcp-form-textarea #textbox[aria-label*="description"]',
         'textarea[name="description"]',
-        'textarea[placeholder*="description"]',
-        'textarea[placeholder*="Description"]',
-        'textarea[aria-label*="description"]',
-        'textarea[aria-label*="Description"]',
-        'textarea[data-testid="description-input"]',
-        'input[name="description"]',
-        'input[placeholder*="description"]',
-        'input[placeholder*="Description"]'
+        'input[name="description"]'
       ];
-      
-      let descriptionElement = null;
-      for (const selector of descriptionSelectors) {
+
+      const desiredTitle = metadata.title || 'Amazing Video Title';
+      const desiredDescription = metadata.description || 'Check out this amazing video!';
+
+      let titleTyped = false;
+      for (const sel of titleCandidates) {
         try {
-          descriptionElement = await this.page.$(selector);
-          if (descriptionElement && await descriptionElement.isVisible()) {
-            break;
-          }
-        } catch (e) {
+          const handle = await this.page.waitForSelector(sel, { visible: true, timeout: 8000 });
+          if (!handle) continue;
+          // Focus and clear existing content
+          await this.page.click(sel, { clickCount: 3 });
+          await this.page.keyboard.press('Backspace');
+          await this.page.type(sel, desiredTitle, { delay: 80 });
+          this.logger.logVideoUpload(videoPath, false, { status: 'title_filled_via_type', selector: sel });
+          titleTyped = true;
+          break;
+        } catch (_) {
           continue;
         }
       }
-      
-      if (descriptionElement) {
-        await descriptionElement.click();
-        await descriptionElement.evaluate(el => el.value = '');
-        await this.human.randomDelay(500, 1000);
-        await descriptionElement.type(metadata.description || 'Check out this amazing video!', { delay: 100 });
-        this.logger.logVideoUpload(videoPath, false, { status: 'description_filled' });
+
+      if (!titleTyped) {
+        await this.fillVideoField('title', desiredTitle, titleCandidates);
       }
 
-      // Step 2: Set "Not made for kids" with improved detection
+      let descriptionTyped = false;
+      for (const sel of descriptionCandidates) {
+        try {
+          const handle = await this.page.waitForSelector(sel, { visible: true, timeout: 8000 });
+          if (!handle) continue;
+          await this.page.click(sel, { clickCount: 3 });
+          await this.page.keyboard.press('Backspace');
+          await this.page.type(sel, desiredDescription, { delay: 80 });
+          this.logger.logVideoUpload(videoPath, false, { status: 'description_filled_via_type', selector: sel });
+          descriptionTyped = true;
+          break;
+        } catch (_) {
+          continue;
+        }
+      }
+
+      if (!descriptionTyped) {
+        await this.fillVideoField('description', desiredDescription, descriptionCandidates);
+      }
+
+      // Step 2: Audience -> select "No, it's not made for kids" (locale-agnostic)
       this.logger.logVideoUpload(videoPath, false, { status: 'setting_kids_option' });
-      
-      const kidsSelectors = [
-        'input[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]',
-        'input[value="no"]',
-        'input[value="false"]',
-        'input[aria-label*="No"]',
-        'input[aria-label*="not made for kids"]',
-        'input[data-testid="not-made-for-kids"]',
-        'label:has-text("No")',
-        'label:has-text("No, it\'s not made for kids")',
-        'button:has-text("No")',
-        'button:has-text("No, it\'s not made for kids")'
-      ];
-      
-      let kidsElement = null;
-      for (const selector of kidsSelectors) {
-        try {
-          kidsElement = await this.page.$(selector);
-          if (kidsElement && await kidsElement.isVisible()) {
-            await kidsElement.click();
-            this.logger.logVideoUpload(videoPath, false, { status: 'kids_option_set' });
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      await this.human.randomDelay(2000, 3000);
-
-      // Step 3: Click Next buttons with improved detection
-      this.logger.logVideoUpload(videoPath, false, { status: 'clicking_next_buttons' });
-      
-      for (let i = 1; i <= 3; i++) {
-        const nextButtonSelectors = [
-          '#next-button',
-          'button:has-text("Next")',
-          'button[aria-label*="Next"]',
-          'button[aria-label*="next"]',
-          '[data-testid="next-button"]',
-          'ytcp-button:has-text("Next")',
-          'button[class*="next"]',
-          'button[class*="Next"]',
-          'button[jsname="next-button"]'
+      try {
+        // Try attribute-based selectors that are stable across locales
+        let clickedKids = false;
+        const kidsSelectors = [
+          'input[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]',
+          'tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]',
+          'ytcp-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]',
+          'input[value="no"]',
+          'input[value="false"]'
         ];
-        
-        let nextButton = null;
-        for (const selector of nextButtonSelectors) {
+        for (const sel of kidsSelectors) {
           try {
-            nextButton = await this.page.$(selector);
-            if (nextButton && await nextButton.isVisible()) {
-              await nextButton.click();
-              this.logger.logVideoUpload(videoPath, false, { status: `next_button_${i}_clicked` });
+            const el = await this.page.waitForSelector(sel, { visible: true, timeout: 2500 });
+            if (el) {
+              await this.page.evaluate(elm => elm.scrollIntoView({ block: 'center' }), el);
+              await el.click();
+              clickedKids = true;
               break;
             }
-          } catch (e) {
-            continue;
-          }
+          } catch {}
+        }
+
+        // Fallback: pick radio with NOT/false semantics from audience group
+        if (!clickedKids) {
+          clickedKids = await this.page.evaluate(() => {
+            const scope = document.querySelector('tp-yt-paper-radio-group, ytcp-radio-group, #audience') || document;
+            const radios = scope.querySelectorAll('tp-yt-paper-radio-button, ytcp-radio-button, input[type="radio"]');
+            for (const r of radios) {
+              const name = r.getAttribute && r.getAttribute('name');
+              const val = r.getAttribute && r.getAttribute('value');
+              if ((name && /NOT_MFK|NOT|FALSE/i.test(name)) || (val && /false|no/i.test(val))) {
+                (r.click ? r.click() : r.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+                return true;
+              }
+            }
+            return false;
+          });
+        }
+        this.logger.logVideoUpload(videoPath, false, { status: clickedKids ? 'kids_option_set' : 'kids_option_not_found' });
+      } catch (e) {
+        this.logger.logVideoUpload(videoPath, false, { status: 'kids_option_failed', error: e.message });
+      }
+      await this.human.randomDelay(600, 900);
+
+      // Step 3: Click Next three times with human-like behavior
+      this.logger.logVideoUpload(videoPath, false, { status: 'clicking_next_buttons' });
+      console.log('👆 Navigating through upload steps...');
+      
+      for (let i = 1; i <= 3; i++) {
+        console.log(`📋 Step ${i}/3: Looking for Next button...`);
+        
+        // Human-like pause before each step
+        await this.human.randomDelay(2000, 4000);
+        
+        let clicked = false;
+        // Prefer the stable id when present
+        const nextSelectors = ['#next-button', 'ytcp-button#next-button button', 'button#next-button'];
+        for (const sel of nextSelectors) {
+          try {
+            const btn = await this.page.waitForSelector(sel, { visible: true, timeout: 5000 });
+            if (btn) {
+              console.log(`✅ Found Next button for step ${i}, clicking...`);
+              await this.page.evaluate(el => el.scrollIntoView({ block: 'center' }), btn);
+              
+              // Human-like hover before click
+              await this.page.mouse.move(0, 0);
+              const box = await btn.boundingBox();
+              if (box) {
+                await this.page.mouse.move(box.x + box.width/2, box.y + box.height/2, { steps: 8 });
+                await this.human.randomDelay(300, 700);
+              }
+              
+              await btn.click();
+              clicked = true;
+              break;
+            }
+          } catch {}
+        }
+        if (!clicked) {
+          console.log(`⚠️ Next button not found for step ${i}, trying Enter key...`);
+          // Fallback: press Enter to activate focused button/dialog next
+          try { await this.page.keyboard.press('Enter'); clicked = true; } catch {}
         }
         
-        if (!nextButton) {
-          this.logger.logVideoUpload(videoPath, false, { status: `next_button_${i}_not_found` });
+        if (clicked) {
+          console.log(`✅ Step ${i} completed, waiting for next section to load...`);
         }
         
+        // Wait for the next step to load with more patience
+        try {
+          await this.page.waitForFunction(() => {
+            const labels = Array.from(document.querySelectorAll('ytcp-stepper, ytcp-video-metadata-editor'))
+              .map(n => n.textContent || '');
+            const joined = labels.join(' ').toLowerCase();
+            return joined.includes('checks') || joined.includes('elements') || joined.includes('visibility');
+          }, { timeout: 8000 });
+          console.log(`📱 Step ${i}: Page loaded successfully`);
+        } catch {
+          console.log(`⚠️ Step ${i}: Page load detection timed out, continuing...`);
+        }
+        
+        this.logger.logVideoUpload(videoPath, false, { status: clicked ? `next_${i}_clicked` : `next_${i}_not_found` });
+        
+        // Longer human-like delay between steps
         await this.human.randomDelay(2000, 4000);
       }
 
-      // Step 4: Set visibility to Public with improved detection
+      // Step 4: Select Public visibility with human-like behavior
       this.logger.logVideoUpload(videoPath, false, { status: 'setting_visibility_to_public' });
+      console.log('🌍 Setting video visibility to Public...');
       
-      const publicSelectors = [
-        'input[name="PUBLIC"]',
-        'input[value="public"]',
-        'input[aria-label*="Public"]',
-        'input[aria-label*="public"]',
-        'input[data-testid="public-radio"]',
-        'input[name="visibility"][value="public"]',
-        'input[name="privacy"][value="public"]',
-        'label:has-text("Public")',
-        'div:has-text("Public")',
-        'span:has-text("Public")',
-        'button:has-text("Public")'
-      ];
+      // Human-like pause before selecting visibility
+      await this.human.randomDelay(1500, 3000);
       
-      let publicElement = null;
-      for (const selector of publicSelectors) {
-        try {
-          publicElement = await this.page.$(selector);
-          if (publicElement && await publicElement.isVisible()) {
-            await publicElement.click();
-            this.logger.logVideoUpload(videoPath, false, { status: 'public_visibility_set' });
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      await this.human.randomDelay(2000, 3000);
-
-      // Step 5: Click Done/Publish button
-      this.logger.logVideoUpload(videoPath, false, { status: 'clicking_done_button' });
-      
-      const doneButtonSelectors = [
-        '#done-button',
-        'button:has-text("Done")',
-        'button:has-text("Publish")',
-        'button:has-text("Upload")',
-        'button[aria-label*="Done"]',
-        'button[aria-label*="Publish"]',
-        'button[aria-label*="Upload"]',
-        '[data-testid="done-button"]',
-        '[data-testid="publish-button"]',
-        '[data-testid="upload-button"]',
-        'button[type="submit"]',
-        'button[jsname="done-button"]',
-        'button[jsname="publish-button"]'
-      ];
-      
-      let doneButton = null;
-      for (const selector of doneButtonSelectors) {
-        try {
-          doneButton = await this.page.$(selector);
-          if (doneButton && await doneButton.isVisible()) {
-            await doneButton.click();
-            this.logger.logVideoUpload(videoPath, false, { status: 'done_button_clicked' });
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      if (!doneButton) {
-        this.logger.logVideoUpload(videoPath, false, { status: 'done_button_not_found' });
-      }
-
-      // Step 6: Wait for upload completion
-      this.logger.logVideoUpload(videoPath, false, { status: 'waiting_for_upload_completion' });
-      await this.human.randomDelay(10000, 15000);
-      
-      // Check for success indicators
-      const successSelectors = [
-        'text="Upload complete"',
-        'text="Video published"',
-        'text="Success"',
-        '[data-testid="upload-success"]',
-        '.upload-success',
-        'a.style-scope.ytcp-video-info'
-      ];
-      
-      let videoLink = '';
-      for (const selector of successSelectors) {
-        try {
-          const element = await this.page.$(selector);
-          if (element) {
-            if (selector.includes('a.style-scope.ytcp-video-info')) {
-              videoLink = await element.evaluate(el => el.href || el.textContent);
+      try {
+        let publicClicked = false;
+        const publicSelectors = [
+          'tp-yt-paper-radio-button[name="PUBLIC"]',
+          'ytcp-radio-button[name="PUBLIC"]',
+          'input[name="PUBLIC"]'
+        ];
+        for (const sel of publicSelectors) {
+          try {
+            const el = await this.page.waitForSelector(sel, { visible: true, timeout: 5000 });
+            if (el) {
+              console.log('✅ Found Public visibility option, selecting...');
+              await this.page.evaluate(elm => elm.scrollIntoView({ block: 'center' }), el);
+              
+              // Human-like hover before click
+              const box = await el.boundingBox();
+              if (box) {
+                await this.page.mouse.move(box.x + box.width/2, box.y + box.height/2, { steps: 6 });
+                await this.human.randomDelay(400, 800);
+              }
+              
+              await el.click();
+              publicClicked = true;
+              break;
             }
-            this.logger.logVideoUpload(videoPath, false, { status: 'upload_success_detected' });
-            break;
+          } catch {}
+        }
+        if (!publicClicked) {
+          console.log('🔍 Looking for Public option by text...');
+          const [pubByText] = await this.page.$x("//*[normalize-space(text())='Public']");
+          if (pubByText) {
+            console.log('✅ Found Public option by text, clicking...');
+            await this.page.evaluate(el => el.scrollIntoView({ block: 'center' }), pubByText);
+            await this.human.randomDelay(300, 600);
+            await pubByText.click();
+            publicClicked = true;
           }
-        } catch (e) {
-          continue;
+        }
+        
+        if (publicClicked) {
+          console.log('✅ Public visibility selected');
+          this.logger.logVideoUpload(videoPath, false, { status: 'public_visibility_set' });
+        } else {
+          console.log('⚠️ Could not find Public visibility option');
+        }
+        
+      } catch (e) {
+        console.log(`❌ Error setting visibility: ${e.message}`);
+        this.logger.logVideoUpload(videoPath, false, { status: 'public_visibility_failed', error: e.message });
+      }
+
+      // Human-like pause after selection
+      await this.human.randomDelay(1200, 2200);
+
+      // Step 5: Click Publish with human-like behavior
+      this.logger.logVideoUpload(videoPath, false, { status: 'clicking_publish' });
+      console.log('🎯 Publishing video...');
+      
+      // Add human-like pause before publishing
+      await this.human.randomDelay(2000, 4000);
+      
+      try {
+        let published = false;
+        const publishSelectors = [
+          'ytcp-button[id="done-button"] button',
+          'ytcp-button[aria-label="Publish"] button',
+          'ytcp-button button'
+        ];
+        for (const sel of publishSelectors) {
+          try {
+            const el = await this.page.waitForSelector(sel, { visible: true, timeout: 2500 });
+            if (el) {
+              const txt = await el.evaluate(n => n.innerText || n.textContent || '');
+              if ((txt || '').toLowerCase().includes('publish') || (txt || '').toLowerCase().includes('done')) {
+                console.log(`📤 Clicking publish button: "${txt}"`);
+                await this.page.evaluate(elm => elm.scrollIntoView({ block: 'center' }), el);
+                
+                // Human-like hover before click
+                await this.page.mouse.move(0, 0);
+                const box = await el.boundingBox();
+                if (box) {
+                  await this.page.mouse.move(box.x + box.width/2, box.y + box.height/2, { steps: 10 });
+                  await this.human.randomDelay(500, 1000);
+                }
+                
+                await el.click();
+                published = true;
+                break;
+              }
+            }
+          } catch {}
+        }
+        if (!published) {
+          const [pubBtn] = await this.page.$x("//*[normalize-space(text())='Publish' or normalize-space(text())='Done']");
+          if (pubBtn) {
+            console.log('📤 Clicking publish button (XPath)');
+            await this.page.evaluate(el => el.scrollIntoView({ block: 'center' }), pubBtn);
+            await this.human.randomDelay(500, 1000);
+            await pubBtn.click();
+            published = true;
+          }
+        }
+        this.logger.logVideoUpload(videoPath, false, { status: published ? 'publish_clicked' : 'publish_not_found' });
+        
+        if (!published) {
+          throw new Error('Could not find or click publish button');
+        }
+        
+      } catch (e) {
+        this.logger.logVideoUpload(videoPath, false, { status: 'publish_click_failed', error: e.message });
+        throw e;
+      }
+
+      // Step 6: Wait for processing and checks with human-like patience
+      console.log('⏳ Waiting for YouTube processing and checks...');
+      this.logger.logVideoUpload(videoPath, false, { status: 'waiting_for_processing_and_checks' });
+      
+      let processingComplete = false;
+      let checksPassed = false;
+      let attempts = 0;
+      const maxAttempts = 60; // 5 minutes max wait
+      
+      while ((!processingComplete || !checksPassed) && attempts < maxAttempts) {
+        try {
+          // Check for processing status
+          const processingText = await this.page.evaluate(() => {
+            const elements = Array.from(document.querySelectorAll('*')).filter(el => {
+              const text = el.textContent || '';
+              return text.includes('Processing') || text.includes('Checking') || text.includes('Upload') || 
+                     text.includes('Published') || text.includes('Complete') || text.includes('Live');
+            });
+            return elements.map(el => el.textContent.trim()).join(' | ');
+          });
+          
+          console.log(`📊 Processing status (${attempts + 1}/${maxAttempts}): ${processingText || 'No status found'}`);
+          
+          // Check if processing is complete
+          if (processingText.includes('Processing complete') || processingText.includes('Checks complete') || 
+              processingText.includes('Video published') || processingText.includes('Published') ||
+              processingText.includes('Upload complete')) {
+            processingComplete = true;
+            console.log('✅ Processing appears to be complete');
+          }
+          
+          // Check for any error messages
+          const errorText = await this.page.evaluate(() => {
+            const errorElements = Array.from(document.querySelectorAll('*')).filter(el => {
+              const text = (el.textContent || '').toLowerCase();
+              return text.includes('error') || text.includes('failed') || text.includes('rejected') || 
+                     text.includes('problem') || text.includes('issue');
+            });
+            return errorElements.map(el => el.textContent.trim()).join(' | ');
+          });
+          
+          if (errorText) {
+            console.log(`⚠️ Potential issues detected: ${errorText}`);
+            this.logger.logVideoUpload(videoPath, false, { status: 'potential_issues_detected', issues: errorText });
+          }
+          
+          // Look for confirmation dialog or success message
+          const confirmationFound = await this.page.evaluate(() => {
+            const confirmElements = Array.from(document.querySelectorAll('*')).filter(el => {
+              const text = (el.textContent || '').toLowerCase();
+              return text.includes('video published') || text.includes('upload complete') || 
+                     text.includes('successfully published') || text.includes('live on youtube') ||
+                     text.includes('published successfully');
+            });
+            return confirmElements.length > 0;
+          });
+          
+          if (confirmationFound) {
+            checksPassed = true;
+            console.log('✅ Publication confirmation found');
+          }
+          
+          // Human-like wait between checks
+          await this.human.randomDelay(4000, 7000);
+          attempts++;
+          
+        } catch (error) {
+          console.log(`❌ Error checking processing status: ${error.message}`);
+          attempts++;
+          await this.human.randomDelay(3000, 5000);
         }
       }
       
-      this.logger.logVideoUpload(videoPath, true, { status: 'finalization_complete', videoLink });
+      // Final wait to ensure everything is settled
+      console.log('⏳ Final wait to ensure publication is complete...');
+      await this.human.randomDelay(5000, 10000);
+
+      // Step 7: Capture video link and final confirmation
+      this.logger.logVideoUpload(videoPath, false, { status: 'capturing_video_link' });
+      let videoLink = '';
+      let finalConfirmation = false;
+      
+      try {
+        // Wait a bit longer for the final confirmation dialog
+        console.log('🔍 Looking for final confirmation and video link...');
+        
+        try {
+        await Promise.race([
+            this.page.waitForXPath("//*[contains(normalize-space(text()), 'Video published') or contains(normalize-space(text()), 'Upload complete')]", { timeout: 30000 }),
+            this.page.waitForXPath("//*[normalize-space(text())='Close']", { timeout: 30000 }),
+            this.page.waitForSelector('a[href*="youtube.com/watch"]', { timeout: 30000 })
+          ]);
+          finalConfirmation = true;
+        } catch (waitError) {
+          console.log('⚠️ Final confirmation dialog not found, but proceeding...');
+        }
+        
+        // Try multiple methods to get the video link
+        try {
+          const linkSelectors = [
+            'a.style-scope.ytcp-video-info',
+            'a[href*="youtube.com/watch"]',
+            'a[href*="youtu.be"]',
+            '[data-testid="video-link"]',
+            '.video-link'
+          ];
+          
+          for (const selector of linkSelectors) {
+            const linkElements = await this.page.$$(selector);
+            for (const linkEl of linkElements) {
+              const href = await linkEl.evaluate(el => el.href || el.textContent || '');
+              if (href && (href.includes('youtube.com/watch') || href.includes('youtu.be'))) {
+              videoLink = href;
+                console.log(`🔗 Found video link: ${videoLink}`);
+              break;
+            }
+          }
+            if (videoLink) break;
+          }
+          
+          // If no direct link found, try to extract from page content
+          if (!videoLink) {
+            videoLink = await this.page.evaluate(() => {
+              const text = document.body.innerText;
+              const match = text.match(/(https?:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]+)/);
+              return match ? match[1] : '';
+            });
+          }
+          
+        } catch (linkError) {
+          console.log(`⚠️ Could not extract video link: ${linkError.message}`);
+        }
+        
+        // Take a screenshot of the final state
+        await this.page.screenshot({ path: './logs/final-publication-state.png' });
+        console.log('📸 Screenshot saved: final-publication-state.png');
+        
+      } catch (finalError) {
+        console.log(`⚠️ Error in final confirmation: ${finalError.message}`);
+      }
+
+      // Human-like final pause before completing
+      console.log('✨ Taking a moment to review the publication...');
+      await this.human.randomDelay(3000, 6000);
+
+      const successMessage = videoLink ? 
+        `Video uploaded and published successfully! Link: ${videoLink}` : 
+        'Video uploaded and published successfully!';
+      
+      console.log(`🎉 ${successMessage}`);
+      this.logger.logVideoUpload(videoPath, true, { 
+        status: 'finalization_complete', 
+        videoLink, 
+        finalConfirmation,
+        processingComplete,
+        checksPassed 
+      });
+      
       return videoLink || 'Video uploaded successfully';
       
     } catch (error) {

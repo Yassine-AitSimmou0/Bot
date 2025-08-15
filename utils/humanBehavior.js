@@ -14,6 +14,7 @@ class HumanBehavior {
   // Random delay between actions
   async randomDelay(min = config.humanBehavior.minDelay, max = config.humanBehavior.maxDelay) {
     const delayTime = Math.floor(Math.random() * (max - min + 1)) + min;
+    console.log(`⏳ Human-like delay: ${Math.round(delayTime / 1000)}s`);
     await delay(delayTime);
   }
 
