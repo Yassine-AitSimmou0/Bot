@@ -158,32 +158,46 @@ class YouTubeBot {
         }
         profileLogger.logStep('gmailLogin', true);
         
-        // Create YouTube channel (this will navigate to studio.youtube.com)
-        await this.retryOperation(
-          () => youtubeBot.createYouTubeChannel(),
-          'Channel creation',
-          profileLogger
-        );
-        profileLogger.logStep('channelCreated', true);
+        // Process multiple channels per account
+        let totalUploadedVideos = 0;
         
-        // Upload videos with better error handling
-        try {
-          const uploadedCount = await youtubeBot.uploadMultipleVideos();
-          logger.info(`[${account.email}] Uploaded ${uploadedCount} videos successfully`);
+        for (let channelIndex = 1; channelIndex <= config.youtube.channelsPerAccount; channelIndex++) {
+          logger.info(`[${account.email}] Creating and processing channel ${channelIndex}/${config.youtube.channelsPerAccount}`);
           
-          if (uploadedCount > 0) {
-            uploadSuccess = true;
-            profileLogger.logStep('videosUploaded', true, { uploadedCount });
-          } else {
-            profileLogger.logStep('videosUploaded', false, { error: 'No videos were uploaded successfully' });
-            logger.warn(`[${account.email}] No videos were uploaded successfully`);
+          // Create YouTube channel
+          await this.retryOperation(
+            () => youtubeBot.createYouTubeChannel(channelIndex),
+            `Channel ${channelIndex} creation`,
+            profileLogger
+          );
+          profileLogger.logStep(`channel${channelIndex}Created`, true);
+          
+          // Upload videos to this channel
+          try {
+            const uploadedCount = await youtubeBot.uploadMultipleVideos(config.youtube.videosPerChannel);
+            logger.info(`[${account.email}] Channel ${channelIndex}: Uploaded ${uploadedCount}/${config.youtube.videosPerChannel} videos`);
+            
+            totalUploadedVideos += uploadedCount;
+            profileLogger.logStep(`channel${channelIndex}VideosUploaded`, true, { uploadedCount });
+            
+          } catch (uploadError) {
+            profileLogger.logStep(`channel${channelIndex}VideosUploaded`, false, { error: uploadError.message });
+            logger.error(`[${account.email}] Channel ${channelIndex} video upload failed:`, uploadError.message);
           }
-        } catch (uploadError) {
-          profileLogger.logStep('videosUploaded', false, { error: uploadError.message });
-          logger.error(`[${account.email}] Video upload failed:`, uploadError.message);
           
-          // Continue with the process even if upload fails
-          // This allows us to save cookies and complete the profile
+          // Small delay between channels
+          if (channelIndex < config.youtube.channelsPerAccount) {
+            logger.info(`[${account.email}] Waiting before creating next channel...`);
+            await this.human.randomDelay(5000, 10000);
+          }
+        }
+        
+        // Mark as success if any videos were uploaded
+        if (totalUploadedVideos > 0) {
+          uploadSuccess = true;
+          logger.info(`[${account.email}] Total uploaded videos across all channels: ${totalUploadedVideos}`);
+        } else {
+          logger.warn(`[${account.email}] No videos were uploaded across any channels`);
         }
         
         // Save session cookies

@@ -27,318 +27,405 @@ class YouTubeAutomation {
     }
   }
 
-  // Login to Gmail/Google account
+  // Login to Gmail/Google account - Enhanced with better error handling
   async loginToGmail(email, password) {
     try {
       this.logger.logStep('gmailLogin', false, { status: 'starting' });
       
-      // Go to Gmail login
+      // Check if page is still available
+      if (this.page.isClosed()) {
+        throw new Error('Page is closed before login attempt');
+      }
+      
+      // Go to Gmail login with enhanced error handling
       console.log('🌐 Navigating to Google accounts login page...');
+      try {
       await this.page.goto('https://accounts.google.com/signin', { 
-        waitUntil: 'networkidle2', 
+          waitUntil: 'networkidle2', 
+          timeout: 45000 
+        });
+      } catch (navError) {
+        console.log('❌ Navigation failed, trying alternative approach...');
+        await this.page.goto('https://accounts.google.com/', { 
+        waitUntil: 'domcontentloaded', 
         timeout: 30000 
       });
+        await this.human.randomDelay(2000, 3000);
+        // Look for sign in link
+        const signInLink = await this.page.$('a[href*="signin"], a[data-action="signin"]');
+        if (signInLink) {
+          await signInLink.click();
+          await this.human.randomDelay(3000, 5000);
+        }
+      }
+      
       console.log('✅ Login page loaded, waiting for elements...');
       await this.human.randomDelay(3000, 5000);
 
-      // Check for captcha or login challenges
-      if (await this.human.checkForCaptcha() || await this.human.checkForLoginChallenge()) {
-          this.logger.logCaptcha();
-        console.log('\n🔒 LOGIN CHALLENGE DETECTED! Please complete the verification manually...');
-        console.log('⏳ Bot will wait for you to complete the verification...');
-        console.log('📸 Screenshot saved to: ./logs/login-page.png');
-        
-        // Take a screenshot for debugging
-        await this.page.screenshot({ path: './logs/login-page.png' });
-        
-        // Wait for user to solve challenge manually
-        await this.waitForManualCaptchaSolution();
+      // Check if page is still available after navigation
+      if (this.page.isClosed()) {
+        throw new Error('Page was closed during navigation');
       }
 
-      // Wait for page to load
+      // Wait for page to stabilize
       await this.page.waitForSelector('body', { timeout: 20000 });
       await this.human.randomDelay(2000, 3000);
       
-      // Take a screenshot for debugging
-      await this.page.screenshot({ path: './logs/login-page.png' });
-      
-      // Find email field with comprehensive approach
+      // Find email field with enhanced detection
       console.log('🔍 Looking for email input field...');
+      await this.page.screenshot({ path: './logs/login-page-before-email.png' });
       
-      // First, let's see what's actually on the page
-      const pageUrl = this.page.url();
-      const pageContent = await this.page.evaluate(() => document.body.innerText);
-      console.log(`📍 Current page URL: ${pageUrl}`);
-      
-      // Check if we need to handle different Google pages
-      if (pageUrl.includes('myaccount.google.com') || pageUrl.includes('accounts.google.com/ManageAccount')) {
-        console.log('🔄 Redirected to account management, navigating back to login...');
-        await this.page.goto('https://accounts.google.com/signin/v2/identifier', { waitUntil: 'networkidle2' });
-        await this.human.randomDelay(2000, 3000);
-      }
-      
-      // Handle verification page
-      if (pageUrl.includes('confirmidentifier') || pageContent.includes('Verify it\'s you')) {
-        console.log('🔐 Detected Google verification page');
-        
-        // Look for the email that's being verified
-        const displayedEmail = await this.page.evaluate(() => {
-          const text = document.body.innerText;
-          const emailMatch = text.match(/[\w\.-]+@[\w\.-]+\.\w+/);
-          return emailMatch ? emailMatch[0] : null;
-        });
-        
-        console.log(`📧 Email being verified: ${displayedEmail}`);
-        
-        if (displayedEmail && displayedEmail !== email) {
-          console.log('❌ Wrong email detected, clearing and starting fresh...');
-          // Clear cookies and try fresh login
-          await this.page.evaluate(() => {
-            document.cookie.split(";").forEach(c => {
-              const eqPos = c.indexOf("=");
-              const name = eqPos > -1 ? c.substr(0, eqPos) : c;
-              document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
-            });
-          });
-          await this.page.goto('https://accounts.google.com/logout', { waitUntil: 'networkidle2' });
-          await this.human.randomDelay(2000, 3000);
-          await this.page.goto('https://accounts.google.com/signin', { waitUntil: 'networkidle2' });
-          await this.human.randomDelay(3000, 5000);
-        } else {
-          // If it's the correct email, proceed with verification
-          console.log('✅ Correct email detected, proceeding with verification...');
-          
-          // Look for Next button on verification page
-          const nextButton = await this.page.$('#identifierNext');
-          if (nextButton && await nextButton.isVisible()) {
-            console.log('🖱️ Clicking Next on verification page...');
-            await nextButton.click();
-            await this.human.randomDelay(3000, 5000);
-            
-            // After clicking Next, we should be at password page
-            return await this.loginToGmail(email, password);
-          }
-        }
-      }
-      
-      // Try to find any input fields first
-      const allInputs = await this.page.$$('input');
-      console.log(`🔍 Found ${allInputs.length} input fields on page`);
-      
-      const emailSelectors = [
-        'input[type="email"]',
-        'input[name="identifier"]',
-        'input[id="identifierId"]',
-        'input[aria-label*="email"]',
-        'input[aria-label*="Email"]',
-        'input[placeholder*="email"]',
-        'input[placeholder*="Email"]',
-        '#identifierId',
-        '[data-testid="email"]',
-        'input[autocomplete="username"]',
-        'input[autocomplete="email"]',
-        'input[name="Email"]',
-        'input[name="username"]',
-        'input[type="text"]' // Generic fallback
-      ];
-      
+      // Wait for email field to be available
       let emailField = null;
-      for (const selector of emailSelectors) {
-        try {
-          const fields = await this.page.$$(selector);
-          for (const field of fields) {
-            if (await field.isVisible()) {
-              console.log(`✅ Found email field with selector: ${selector}`);
-              emailField = field;
-              break;
-            }
-          }
-          if (emailField) break;
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      // If still no field found, try to find the first visible text input
-      if (!emailField) {
-        console.log('⚠️ Specific email selectors failed, trying first visible text input...');
-        const textInputs = await this.page.$$('input[type="text"], input[type="email"]');
-        for (const input of textInputs) {
-          if (await input.isVisible()) {
-            console.log('✅ Found fallback text input field');
-            emailField = input;
-            break;
-          }
-        }
+      try {
+        await this.page.waitForSelector('#identifierId', { timeout: 10000 });
+        emailField = await this.page.$('#identifierId');
+      } catch (e) {
+        // Try alternative selectors
+        emailField = await this.page.$('input[type="email"], input[name="identifier"], input[aria-label*="email" i]');
       }
       
       if (!emailField) {
-        // Take screenshot and dump page info for debugging
         await this.page.screenshot({ path: './logs/email-field-not-found.png' });
-        const pageTitle = await this.page.title();
-        const pageContent = await this.page.evaluate(() => document.body.innerText.substring(0, 500));
-        console.log(`📸 Screenshot saved: email-field-not-found.png`);
-        console.log(`📄 Page title: ${pageTitle}`);
-        console.log(`📝 Page content preview: ${pageContent}`);
-        
-        // Try alternative login URL
-        console.log('🔄 Trying alternative Gmail login URL...');
-        await this.page.goto('https://mail.google.com/', { waitUntil: 'networkidle2' });
-        await this.human.randomDelay(3000, 5000);
-        
-        // Try again with the new page
-        const gmailEmailField = await this.page.$('input[type="email"], #identifierId, input[name="identifier"]');
-        if (gmailEmailField && await gmailEmailField.isVisible()) {
-          console.log('✅ Found email field on Gmail page');
-          emailField = gmailEmailField;
-        } else {
-          throw new Error('Email field not found on any login page');
-        }
+        throw new Error('Email field not found');
       }
       
-      this.logger.logStep('gmailLogin', false, { status: 'email_field_found' });
+      // Check page status before typing
+      if (this.page.isClosed()) {
+        throw new Error('Page closed before email typing');
+      }
       
-      // Focus and type email
+      // Focus and type email with enhanced safety
+      console.log('📧 Typing email address...');
       await emailField.focus();
       await this.human.randomDelay(500, 1000);
       
-      await this.page.keyboard.type(email, { delay: 100 });
+      // Clear field first
+      await this.page.evaluate(el => el.value = '', emailField);
+      await this.human.randomDelay(200, 400);
+      
+      // Type email character by character for human-like behavior
+      for (let i = 0; i < email.length; i++) {
+        if (this.page.isClosed()) {
+          throw new Error('Page closed during email typing');
+        }
+        await this.page.keyboard.type(email[i], { delay: 80 + Math.random() * 40 });
+        if (Math.random() < 0.1) {
+          await this.human.randomDelay(100, 300);
+        }
+      }
       await this.human.randomDelay(1000, 1500);
       
-      // Verify email was typed
-      const typedEmail = await emailField.evaluate(el => el.value);
-      if (typedEmail !== email) {
-        throw new Error('Email typing failed');
+      // Click Next button with enhanced detection
+      console.log('🖱️ Clicking Next button to proceed to password...');
+      await this.page.screenshot({ path: './logs/before-next-click.png' });
+      
+      if (this.page.isClosed()) {
+        throw new Error('Page closed before next button click');
       }
       
-      // Click Next button
-      console.log('🔍 Looking for Next button after email...');
-      const nextButtonSelectors = [
-        '#identifierNext',
-        'button[type="submit"]',
-        'button[id="identifierNext"]',
-        'div[id="identifierNext"]',
-
-        '[data-testid="next"]'
-      ];
+      let nextClicked = false;
+      try {
+        const nextButton = await this.page.waitForSelector('#identifierNext', { timeout: 5000 });
+        if (nextButton && await nextButton.isIntersectingViewport()) {
+        await nextButton.click();
+          nextClicked = true;
+        }
+      } catch (e) {
+        console.log('⚠️ Standard next button not found, trying alternatives...');
+      }
       
-      let nextButton = null;
-      for (const selector of nextButtonSelectors) {
-        try {
-          nextButton = await this.page.$(selector);
-          if (nextButton && await nextButton.isVisible()) {
-            console.log(`✅ Found Next button with selector: ${selector}`);
-            break;
+      if (!nextClicked) {
+        // Try alternative methods - but be more careful about what we click
+        const altButtons = await this.page.$$('button[type="submit"]');
+        for (const button of altButtons) {
+          try {
+            const buttonText = await this.page.evaluate(el => el.textContent.toLowerCase(), button);
+            // Only click if it looks like a next/continue button
+            if ((buttonText.includes('next') || buttonText.includes('continue') || buttonText === '') && 
+                await button.isIntersectingViewport()) {
+              await button.click();
+              nextClicked = true;
+              break;
+            }
+          } catch (e) {
+            continue;
           }
-        } catch (e) {
-          continue;
         }
       }
       
-      if (nextButton) {
-        console.log('🖱️ Clicking Next button...');
-        await nextButton.click();
-      } else {
-        console.log('⌨️ Next button not found, pressing Enter...');
+      if (!nextClicked) {
+        console.log('⌨️ Clicking failed, trying Enter key...');
         await this.page.keyboard.press('Enter');
       }
       
-      // Wait for password field and check for captcha again
-      await this.human.randomDelay(3000, 4000);
+      // Wait for navigation to password page
+      console.log('⏳ Waiting for password page to load...');
+      await this.human.randomDelay(3000, 5000);
       
-      // Check for captcha or login challenges after email submission
-      if (await this.human.checkForCaptcha() || await this.human.checkForLoginChallenge()) {
-        this.logger.logCaptcha();
-        console.log('\n🔒 LOGIN CHALLENGE DETECTED after email! Please complete the verification manually...');
-        console.log('⏳ Bot will wait for you to complete the verification...');
-        
-        // Take a screenshot for debugging
-        await this.page.screenshot({ path: './logs/login-page.png' });
-        
-        // Wait for user to solve challenge manually
-        await this.waitForManualCaptchaSolution();
+      if (this.page.isClosed()) {
+        throw new Error('Page closed during password page navigation');
       }
       
-      console.log('🔍 Looking for password input field...');
-      const passwordSelectors = [
-        'input[type="password"]',
-        'input[name="password"]',
-        'input[id="password"]',
-        'input[aria-label*="password"]',
-        'input[aria-label*="Password"]',
-        'input[placeholder*="password"]',
-        'input[placeholder*="Password"]',
-        '#password',
-        '[data-testid="password"]',
-        'input[autocomplete="current-password"]'
-      ];
+      // Wait specifically for password field to appear with enhanced detection
+      console.log('🔍 Waiting for password field to appear...');
+      await this.page.screenshot({ path: './logs/after-next-click.png' });
+      
+      if (this.page.isClosed()) {
+        throw new Error('Page closed while waiting for password field');
+      }
       
       let passwordField = null;
-      for (const selector of passwordSelectors) {
+      let attempts = 0;
+      const maxAttempts = 5;
+      
+      while (!passwordField && attempts < maxAttempts) {
+        attempts++;
+        console.log(`🔍 Password field detection attempt ${attempts}/${maxAttempts}...`);
+        
         try {
-          passwordField = await this.page.$(selector);
-          if (passwordField && await passwordField.isVisible()) {
-            console.log(`✅ Found password field with selector: ${selector}`);
+          await this.page.waitForSelector('input[type="password"]', { timeout: 8000 });
+          passwordField = await this.page.$('input[type="password"]');
+          if (passwordField) {
+            console.log('✅ Password field detected with standard selector');
             break;
           }
-        } catch (e) {
-          continue;
+      } catch (e) {
+          console.log('⚠️ Standard password selector failed, trying alternatives...');
+        }
+        
+        // Try alternative selectors
+        const altSelectors = [
+          'input[name="password"]',
+          'input[aria-label*="password" i]',
+          'input[autocomplete="current-password"]',
+          'input[id*="password"]'
+        ];
+        
+        for (const selector of altSelectors) {
+          try {
+            passwordField = await this.page.$(selector);
+            if (passwordField) {
+              console.log(`✅ Password field found with selector: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+      if (!passwordField) {
+          console.log(`❌ Password field not found in attempt ${attempts}, waiting longer...`);
+          await this.human.randomDelay(2000, 4000);
+          
+          if (this.page.isClosed()) {
+            throw new Error('Page closed during password field detection');
+          }
+          
+          // Check if we're still on email page (sometimes transition fails)
+          try {
+            const emailFieldStillThere = await this.page.$('#identifierId');
+            if (emailFieldStillThere && await emailFieldStillThere.isVisible()) {
+              console.log('⚠️ Still on email page, trying to proceed again...');
+              const nextBtn = await this.page.$('#identifierNext');
+              if (nextBtn && await nextBtn.isVisible()) {
+                await nextBtn.click();
+                await this.human.randomDelay(3000, 5000);
+              }
+            }
+          } catch (e) {
+            console.log('🔍 Email field check failed, continuing with password detection...');
+          }
         }
       }
       
       if (!passwordField) {
-        // Take screenshot for debugging
+        console.log('❌ Password field not found after all attempts!');
         await this.page.screenshot({ path: './logs/password-field-not-found.png' });
-        console.log('📸 Screenshot saved: password-field-not-found.png');
-        throw new Error('Password field not found');
+        
+        // Debug: Check what's actually on the page
+        const debugUrl = this.page.url();
+        const pageContent = await this.page.evaluate(() => document.body.innerText.substring(0, 500));
+        console.log(`📍 Current URL: ${debugUrl}`);
+        console.log(`📄 Page content preview: ${pageContent}`);
+        
+        throw new Error('Password field not found after email step');
       }
       
-      // Focus and type password
+      console.log('✅ Password field found successfully');
+      
+      // Verify we're actually on the password page before proceeding
+      const pageUrl = this.page.url();
+      console.log(`📍 Current URL: ${pageUrl}`);
+      
+      // Don't double-click if we're already on password page
+      if (!pageUrl.includes('challenge/pwd') && !pageUrl.includes('password')) {
+        const emailFieldStillPresent = await this.page.$('#identifierId');
+        if (emailFieldStillPresent && await emailFieldStillPresent.isVisible()) {
+          console.log('⚠️ Still on email page, but password field found - this is unusual');
+          console.log('🔄 Waiting for proper page transition...');
+          await this.human.randomDelay(2000, 3000);
+        }
+      } else {
+        console.log('✅ Confirmed on password page');
+      }
+      
+      // Focus and type password with enhanced safety
+      console.log('🔐 Focusing password field and typing password...');
+      
+      if (this.page.isClosed()) {
+        throw new Error('Page closed before password typing');
+      }
+      
+      // Ensure field is visible and ready
       await passwordField.focus();
       await this.human.randomDelay(500, 1000);
       
-      await this.page.keyboard.type(password, { delay: 100 });
-      await this.human.randomDelay(1000, 1500);
-      
-      // Verify password was typed
-      const typedPassword = await passwordField.evaluate(el => el.value);
-      if (typedPassword !== password) {
-        throw new Error('Password typing failed');
+            // Clear any existing content in password field - safer approach
+      try {
+        // Just focus and clear without evaluate to avoid potential issues
+        await this.page.keyboard.down('Control');
+        await this.page.keyboard.press('A');
+        await this.page.keyboard.up('Control');
+        await this.page.keyboard.press('Delete');
+        await this.human.randomDelay(200, 400);
+      } catch (e) {
+        console.log('⚠️ Field clearing failed, continuing with typing...');
       }
       
-      // Click Next for password
-      const passwordNextButton = await this.page.$('#passwordNext, button[type="submit"]');
-      if (passwordNextButton) {
+      console.log('🔑 Typing password character by character...');
+      
+      // Add a small delay before starting to type
+      await this.human.randomDelay(500, 800);
+      
+      // Type password character by character for human-like behavior
+      for (let i = 0; i < password.length; i++) {
+        if (this.page.isClosed()) {
+          throw new Error('Page closed during password typing');
+        }
+        
+        // Check if we're still on the right page
+        const typingUrl = this.page.url();
+        if (typingUrl.includes('accounts.google.com/signin') && !typingUrl.includes('challenge')) {
+          throw new Error('Page reloaded during password typing - back to email step');
+        }
+        
+        await this.page.keyboard.type(password[i], { delay: 90 + Math.random() * 50 });
+        
+        // Random pauses to simulate human typing
+        if (Math.random() < 0.15) {
+          await this.human.randomDelay(150, 400);
+        }
+      }
+      
+      await this.human.randomDelay(1000, 1500);
+      console.log('✅ Password typed successfully');
+      
+      // Click Next for password with enhanced detection
+      console.log('🖱️ Clicking Next to submit password...');
+      await this.page.screenshot({ path: './logs/before-password-submit.png' });
+      
+      if (this.page.isClosed()) {
+        throw new Error('Page closed before password submission');
+      }
+      
+      let passwordSubmitted = false;
+      try {
+        const passwordNextButton = await this.page.waitForSelector('#passwordNext', { timeout: 5000 });
+        if (passwordNextButton && await passwordNextButton.isIntersectingViewport()) {
         await passwordNextButton.click();
-      } else {
+          passwordSubmitted = true;
+        }
+      } catch (e) {
+        console.log('⚠️ Standard password next button not found, trying alternatives...');
+      }
+      
+      if (!passwordSubmitted) {
+        // Try alternative submit methods - but be careful about what we click
+        const altButtons = await this.page.$$('button[type="submit"]');
+        for (const button of altButtons) {
+          try {
+            const buttonText = await this.page.evaluate(el => el.textContent.toLowerCase(), button);
+            // Only click if it looks like a next/continue button
+            if ((buttonText.includes('next') || buttonText.includes('continue') || buttonText === '') && 
+                await button.isIntersectingViewport()) {
+              await button.click();
+              passwordSubmitted = true;
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+      
+      if (!passwordSubmitted) {
+        console.log('⌨️ Button click failed, trying Enter key...');
         await this.page.keyboard.press('Enter');
       }
 
-      // Wait for login to complete and check for final captcha
-      await this.human.waitForPageLoad();
-      await this.human.randomDelay(3000, 5000);
+      // Wait for login to complete and check for verification
+      console.log('⏳ Waiting for login completion...');
+      await this.human.randomDelay(4000, 6000);
       
-      // Check for captcha or login challenges after password submission
-      if (await this.human.checkForCaptcha() || await this.human.checkForLoginChallenge()) {
-        this.logger.logCaptcha();
-        console.log('\n🔒 LOGIN CHALLENGE DETECTED after password! Please complete the verification manually...');
-        console.log('⏳ Bot will wait for you to complete the verification...');
-        
-        // Take a screenshot for debugging
-        await this.page.screenshot({ path: './logs/login-page.png' });
-        
-        // Wait for user to solve challenge manually
-        await this.waitForManualCaptchaSolution();
+      if (this.page.isClosed()) {
+        throw new Error('Page closed after password submission');
       }
       
-      // Verify login success
-      const currentUrl = this.page.url();
+      // Check if manual verification is needed
+      const verificationUrl = this.page.url();
+      const pageContent = await this.page.evaluate(() => document.body.innerText.toLowerCase());
       
-      if (currentUrl.includes('myaccount.google.com') || currentUrl.includes('gmail.com')) {
-        this.logger.logStep('gmailLogin', true, { url: currentUrl });
+      // Check for various verification scenarios
+      const verificationKeywords = [
+        'verify', 'verification', 'confirm', 'security', 'suspicious activity',
+        'unusual activity', 'sign in attempt', 'device', 'location',
+        'phone number', 'recovery', 'backup', 'two-step', '2-step',
+        'authenticator', 'code', 'text message', 'sms', 'verify it\'s you',
+        'confirm your identity', 'security check', 'protect your account',
+        'additional verification', 'verify your phone', 'verify your email'
+      ];
+      
+      // Check URL patterns that indicate verification
+      const verificationUrlPatterns = [
+        'challenge', 'verify', 'confirmation', 'security', 'signin/challenge',
+        'signin/verify', 'accounts.google.com/signin/v2/challenge'
+      ];
+      
+      const needsVerification = verificationKeywords.some(keyword => 
+        pageContent.includes(keyword)
+      ) || verificationUrlPatterns.some(pattern => 
+        currentUrl.includes(pattern)
+      );
+      
+      if (needsVerification || (!currentUrl.includes('myaccount.google.com') && !currentUrl.includes('gmail.com'))) {
+        console.log('\n🔒 MANUAL VERIFICATION REQUIRED!');
+        console.log('=====================================');
+        console.log('📧 Google requires manual verification for this email.');
+        console.log('🎯 Please complete the verification process manually:');
+        console.log('   • Check your email for verification codes');
+        console.log('   • Complete phone/SMS verification if requested');
+        console.log('   • Approve sign-in notifications');
+        console.log('   • Complete any security challenges');
+        console.log('');
+        console.log('⏳ Bot will wait and monitor for login completion...');
+        console.log('📸 Screenshot saved to: ./logs/verification-required.png');
+        
+        // Take a screenshot for reference
+        await this.page.screenshot({ path: './logs/verification-required.png' });
+        
+        // Wait for manual verification with timeout
+        await this.waitForManualVerification();
+      }
+      
+      // Final verification of login success
+      const finalUrl = this.page.url();
+      if (finalUrl.includes('myaccount.google.com') || finalUrl.includes('gmail.com') || finalUrl.includes('accounts.google.com/b/0')) {
+        console.log('✅ Gmail login successful!');
+        this.logger.logStep('gmailLogin', true, { url: finalUrl });
         return true;
       } else {
-        this.logger.logError(new Error(`Login failed - unexpected URL: ${currentUrl}`), 'gmailLogin');
+        this.logger.logError(new Error(`Login failed - unexpected URL: ${finalUrl}`), 'gmailLogin');
         return false;
       }
       
@@ -346,6 +433,56 @@ class YouTubeAutomation {
       this.logger.logError(error, 'gmailLogin');
       throw error;
     }
+  }
+
+  // Wait for manual verification (email verification, 2FA, etc.)
+  async waitForManualVerification() {
+    console.log('\n🎯 WAITING FOR MANUAL VERIFICATION');
+    console.log('=====================================');
+    
+    const maxWaitTime = 300000; // 5 minutes
+    const checkInterval = 10000; // Check every 10 seconds
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        // Check current URL and page content
+        const currentUrl = this.page.url();
+        const pageContent = await this.page.evaluate(() => document.body.innerText.toLowerCase());
+        
+        // Check if verification is complete (successful login indicators)
+        const successIndicators = [
+          currentUrl.includes('myaccount.google.com'),
+          currentUrl.includes('gmail.com'),
+          currentUrl.includes('accounts.google.com/b/0'),
+          pageContent.includes('welcome') && !pageContent.includes('verify'),
+          pageContent.includes('signed in'),
+          pageContent.includes('account settings')
+        ];
+        
+        if (successIndicators.some(indicator => indicator)) {
+          console.log('✅ Manual verification completed successfully!');
+          return true;
+        }
+        
+        // Show progress update
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        const remaining = Math.round((maxWaitTime - (Date.now() - startTime)) / 1000);
+        console.log(`⏳ Waiting for verification... (${elapsed}s elapsed, ${remaining}s remaining)`);
+        console.log(`📍 Current URL: ${currentUrl}`);
+        
+        // Wait before next check
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+        
+      } catch (error) {
+        console.log(`⚠️ Error during verification check: ${error.message}`);
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+      }
+    }
+    
+    console.log('⏰ Manual verification timeout reached (5 minutes)');
+    console.log('🔄 Bot will continue and attempt to proceed...');
+    return false;
   }
 
   // Wait for manual login challenge solution
@@ -2566,6 +2703,8 @@ class YouTubeAutomation {
     this.logger.logVideoUpload('', false, { status: 'upload_button_not_found_via_keyboard' });
     return null;
   }
+  
+
 }
 
 module.exports = YouTubeAutomation; 

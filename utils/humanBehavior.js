@@ -39,6 +39,47 @@ class HumanBehavior {
     }
   }
 
+  // Human-like typing with element object
+  async typeHuman(element, text) {
+    if (!element) {
+      throw new Error('Element is required for typeHuman');
+    }
+
+    // Focus the element first
+    await element.focus();
+    await this.randomDelay(300, 700);
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      
+      // Variable typing speed (50-200ms per character)
+      const baseDelay = 80 + Math.random() * 120;
+      
+      // Slower for special characters
+      const charDelay = /[A-Z0-9@._-]/.test(char) ? baseDelay * 1.2 : baseDelay;
+      
+      await this.page.keyboard.type(char, { delay: charDelay });
+      
+      // Occasionally pause longer (like a human thinking or correcting)
+      if (Math.random() < 0.08) {
+        await this.randomDelay(500, 1200);
+      }
+      
+      // Micro-pause at specific characters
+      if (['@', '.', '_', '-'].includes(char)) {
+        await this.randomDelay(100, 300);
+      }
+      
+      // Very small random variations in typing rhythm
+      if (Math.random() < 0.3) {
+        await this.randomDelay(50, 150);
+      }
+    }
+    
+    // Small pause after typing is complete
+    await this.randomDelay(200, 500);
+  }
+
   // Human-like clicking with cursor movement
   async humanClick(selector, options = {}) {
     const element = await this.page.$(selector);

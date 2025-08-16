@@ -6,16 +6,29 @@ module.exports = {
     apiToken: process.env.GOLOGIN_API_TOKEN || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODlmMDM5MGMxYTFjNGQxOGZkMDNiMmUiLCJ0eXBlIjoiZGV2Iiwiand0aWQiOiI2ODlmMDNkOTEyNmIwMjA3NzNiNWY4MmQifQ.ijk2DMdGDqdfqiMGlv6SWEM3_7fs7LIrGWhKHb_bngw',
     baseUrl: 'https://gologin.com/api',
     profileName: 'YouTube Bot Profile',
-    // Reuse created profiles instead of creating/deleting each run
-    reuseProfiles: true,
+    // Create fresh profiles for each run (better for multi-channel workflow)
+    reuseProfiles: false,
     // Directory to store per-account profile metadata
-    profilesDir: './profiles'
+    profilesDir: './profiles',
+    // Proxy Configuration
+    proxy: {
+      enabled: true,
+      // Use free US proxies when creating profiles
+      useFreeProxies: true,
+      // Default country for free proxies
+      defaultCountry: 'us',
+      // Proxy type: 'dataCenter', 'residential', 'mobile'
+      proxyType: 'dataCenter',
+      // Retry attempts for proxy assignment
+      retryAttempts: 3
+    }
   },
 
   // YouTube Configuration
   youtube: {
     uploadDelay: 30000, // 30 seconds between uploads
-    maxVideosPerChannel: 1, // Start with 1 video for testing
+    videosPerChannel: 3, // Upload 3 videos per channel
+    channelsPerAccount: 2, // Create 2 channels per Gmail account
     videoFolder: './videos',
     metadataFile: './video-metadata.json'
   },
@@ -32,13 +45,13 @@ module.exports = {
     headless: false,
     slowMo: 50,
     defaultTimeout: 30000,
-    viewport: { width: 1920, height: 1080 },
+    viewport: { width: 1366, height: 768 },
     // If true, forces Puppeteer viewport to the value above; if false, leaves viewport as-is
-    enforceViewport: false,
+    enforceViewport: true,
     // Window control: 'none' to not force OS window size, 'custom' to apply windowBounds below via CDP
-    windowControl: 'none',
-    // Only used when windowControl === 'custom'
-    windowBounds: { width: 1280, height: 800, left: 0, top: 0 }
+    windowControl: 'custom',
+    // GoLogin browser window settings
+    windowBounds: { width: 1366, height: 768, left: 100, top: 50 }
   },
 
   // Logging Configuration
